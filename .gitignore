@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 
+# dotenv environment variable files
+.env
+.env.development
+.env.test
+.env.production
+.env.local
+.env.*.local
+
+# Local Docker configuration
+docker-compose.yml
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
