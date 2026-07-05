@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import {
   FiGrid,
   FiShoppingCart,
@@ -11,21 +12,70 @@ import { FileBarChart2Icon } from "lucide-react";
 import { IoExitOutline } from "react-icons/io5";
 import { useAuth } from "../../contexts/AuthContext";
 import { useOrderCount } from "../../contexts/OrderCountContext";
+import { UserService } from "../../service/user.service";
+import type { UserResponseDto } from "../../dtos/response/user-response.dto";
+
+function getInitials(name: string) {
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  return initials || "AD";
+}
 
 export function Sidebar() {
   const { logout } = useAuth();
   const { totalOrders } = useOrderCount();
+  const [adminUser, setAdminUser] = useState<UserResponseDto | null>(null);
   const navigate = useNavigate();
 
-  function handleLogout() {
-    // 1️⃣ Limpa token e estado
-    logout();
+  useEffect(() => {
+    let active = true;
 
-    // 2️⃣ Redireciona para login
+    async function loadAdminUser() {
+      try {
+        const authenticatedUser = await UserService.me();
+        const user = await UserService.findOne(authenticatedUser.id);
+
+        if (active) {
+          setAdminUser(user);
+        }
+      } catch {
+        if (active) {
+          setAdminUser(null);
+        }
+      }
+    }
+
+    function handleAdminProfileUpdated(event: Event) {
+      const updatedUser = (event as CustomEvent<UserResponseDto>).detail;
+
+      if (updatedUser) {
+        setAdminUser(updatedUser);
+      }
+    }
+
+    void loadAdminUser();
+    window.addEventListener("admin-profile:updated", handleAdminProfileUpdated);
+
+    return () => {
+      active = false;
+      window.removeEventListener(
+        "admin-profile:updated",
+        handleAdminProfileUpdated,
+      );
+    };
+  }, []);
+
+  function handleLogout() {
+    logout();
     navigate("/login");
   }
 
-  
   return (
     <aside className={styles.sidebar}>
       <div>
@@ -111,14 +161,12 @@ export function Sidebar() {
         </NavLink>
 
         <div className={styles.user}>
-          <img
-            src="https://i.pravatar.cc/40"
-            alt="User"
-            className={styles.avatar}
-          />
+          <div className={styles.avatar}>
+            {getInitials(adminUser?.name ?? "Administrador")}
+          </div>
           <div>
-            <strong>Ricardo Silva</strong>
-            <span>Gerente</span>
+            <strong>{adminUser?.name ?? "Administrador"}</strong>
+            <span>{adminUser?.role === "admin" ? "Administrador" : "Usuário"}</span>
           </div>
         </div>
       </div>

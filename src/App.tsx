@@ -6,6 +6,8 @@ import { Products } from "./pages/Product/Products";
 import { ProductsDetails } from "./pages/Product/ProductsDetails";
 import OrderDetails from "./pages/Orders/OrdersDetails";
 import Login from "./pages/Login/Login";
+import { Customers } from "./pages/Customers/Customers";
+import { Reports } from "./pages/Reports/Reports";
 import { useAuth } from "./contexts/AuthContext";
 import { useOrderCount } from "./contexts/OrderCountContext";
 import { Config } from "./pages/Config/Config";
@@ -126,6 +128,8 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/pedidos" element={<Orders />} />
           <Route path="/produtos" element={<Products />} />
+          <Route path="/clientes" element={<Customers />} />
+          <Route path="/relatorios" element={<Reports />} />
           <Route path="/configuracoes" element={<Config />} />
           <Route path="/product-details/:id?" element={<ProductsDetails />} />
           <Route path="/orders-details/:id" element={<OrderDetails />} />
