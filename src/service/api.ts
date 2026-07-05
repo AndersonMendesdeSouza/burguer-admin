@@ -1,7 +1,7 @@
 import axios from "axios";
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_URL ||  "https://burguer-facil-api-production.up.railway.app";
+  import.meta.env.VITE_API_URL ||  "https://burguer-facil-api-production.up.railway.app"; 
   // "http://localhost:3000";
 
 const api = axios.create({
