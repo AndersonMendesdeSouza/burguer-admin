@@ -117,9 +117,12 @@
 }
 
 .smallAction {
+  min-height: 34px;
+  padding: 0 11px;
   border-color: rgba(255, 212, 0, 0.22);
   background: rgba(255, 212, 0, 0.07);
   color: var(--highlight);
+  font-size: 11px;
 }
 
 .saveBtn,
@@ -258,7 +261,8 @@
 
 .galleryPanel {
   align-self: start;
-  width: min(100%, 408px);
+  width: min(100%, 342px);
+  padding: 10px;
 }
 
 .panelError {
@@ -279,14 +283,14 @@
 .sectionHeader,
 .panelHeader,
 .addonsHeader {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .sectionTitle,
 .panelTitle {
   margin: 4px 0 0;
   color: rgba(255, 255, 255, 0.92);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 950;
   line-height: 1.15;
 }
@@ -314,14 +318,15 @@
 
 .gallery {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, 100px);
+  gap: 8px;
 }
 
 .mediaCard,
 .uploadCard {
   position: relative;
-  min-height: 132px;
+  width: 100px;
+  min-height: 100px;
   aspect-ratio: 1 / 1;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -337,39 +342,39 @@
 .mediaImg {
   width: 100%;
   height: 100%;
-  min-height: 132px;
+  min-height: 100px;
   display: block;
   object-fit: cover;
 }
 
 .primaryTag {
   position: absolute;
-  top: 9px;
-  left: 9px;
+  top: 7px;
+  left: 7px;
   z-index: 2;
-  min-height: 24px;
+  min-height: 20px;
   display: inline-flex;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 7px;
   border-radius: 999px;
   background: var(--highlight);
   color: #111;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 950;
 }
 
 .mediaActions {
   position: absolute;
-  right: 9px;
-  bottom: 9px;
+  right: 6px;
+  bottom: 6px;
   z-index: 2;
   display: flex;
-  gap: 7px;
+  gap: 5px;
 }
 
 .mediaBtn {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -382,11 +387,11 @@
 }
 
 .uploadCard {
-  min-height: 132px;
+  min-height: 100px;
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 7px;
+  gap: 4px;
   border-style: dashed;
   color: rgba(255, 255, 255, 0.64);
   cursor: pointer;
@@ -394,21 +399,21 @@
 
 .uploadCard strong {
   color: rgba(255, 255, 255, 0.84);
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 950;
 }
 
 .uploadCard span {
   color: rgba(255, 255, 255, 0.42);
-  font-size: 10px;
+  font-size: 8px;
   font-weight: 850;
   letter-spacing: 0.08em;
 }
 
 .uploadIcon {
-  width: 36px;
-  height: 36px;
-  padding: 9px;
+  width: 28px;
+  height: 28px;
+  padding: 7px;
   border-radius: 8px;
   background: rgba(255, 212, 0, 0.1);
   color: var(--highlight);
@@ -896,7 +901,7 @@
   }
 
   .galleryPanel {
-    width: 100%;
+    width: min(100%, 342px);
   }
 
   .previewPanel {
