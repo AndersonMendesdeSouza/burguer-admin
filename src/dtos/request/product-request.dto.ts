@@ -18,4 +18,6 @@ export interface ProductRequest {
   stockEnabled?: boolean;
   stock?: number;
   addons?: ProductAddonRequest[];
+  existingImageIds?: string[];
+  primaryImageId?: string;
 }

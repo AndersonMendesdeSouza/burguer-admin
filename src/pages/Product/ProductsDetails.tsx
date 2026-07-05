@@ -1,10 +1,24 @@
-import type { CSSProperties } from "react";
+import type { ChangeEvent, CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./ProductDetails.module.css";
-import { FiEye, FiTrash2, FiX } from "react-icons/fi";
+import {
+  FiAlertCircle,
+  FiArrowLeft,
+  FiCheck,
+  FiDollarSign,
+  FiEye,
+  FiImage,
+  FiLoader,
+  FiPackage,
+  FiPlus,
+  FiSave,
+  FiTrash2,
+  FiUploadCloud,
+  FiX,
+} from "react-icons/fi";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "react-toastify";
 import Colors from "../../themes/Colors";
-import { BiTrash } from "react-icons/bi";
 import { ProductService } from "../../service/product.service";
 import type { ProductResponse } from "../../dtos/response/product-response.dto";
 import type { ImageResponse } from "../../dtos/response/image-response.dto";
@@ -32,13 +46,18 @@ type Addon = {
 };
 
 type FieldErrors = {
+  media?: string;
   name?: string;
   description?: string;
   category?: string;
   price?: string;
   promoPrice?: string;
-  stockEnabled?: string;
   stock?: string;
+};
+
+type AddonErrors = {
+  name?: string;
+  price?: string;
 };
 
 type ProductDetailsCssVars = CSSProperties & {
@@ -49,22 +68,72 @@ type ProductDetailsCssVars = CSSProperties & {
   "--textSecondary": string;
 };
 
-function currencyBRL(v: number) {
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const categoryOptions = [
+  { value: ProductCategoryEnum.FOOD, label: "Comidas" },
+  { value: ProductCategoryEnum.DRINK, label: "Bebidas" },
+  { value: ProductCategoryEnum.ADDON, label: "Acompanhamentos" },
+  { value: ProductCategoryEnum.DESSERT, label: "Sobremesas" },
+];
+
+function currencyBRL(value: number) {
+  return value.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+function toDot(value: string) {
+  return value.replace(/\./g, "").replace(",", ".").trim();
+}
+
+function toCurrencyInput(value?: string | number | null) {
+  if (value === undefined || value === null || value === "") return "";
+  return String(value).replace(".", ",");
+}
+
+function parseDecimal(value: string) {
+  return Number(toDot(value));
+}
+
+function getImageUrl(image: ImageResponse) {
+  if (image.url?.startsWith("http")) return image.url;
+  return `${API_BASE_URL}/${String(image.url || "").replace(/^\/+/, "")}`;
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (
+    typeof error === "object" &&
+    error &&
+    "response" in error &&
+    typeof error.response === "object" &&
+    error.response &&
+    "data" in error.response &&
+    typeof error.response.data === "object" &&
+    error.response.data &&
+    "message" in error.response.data
+  ) {
+    const message = error.response.data.message;
+    if (Array.isArray(message)) return message.join(", ");
+    if (typeof message === "string") return message;
+  }
+
+  return fallback;
 }
 
 export function ProductsDetails() {
+  const navigate = useNavigate();
+  const { id } = useParams<{ id?: string }>();
+  const isEdit = !!id;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [media, setMedia] = useState<Media[]>([]);
   const [addons, setAddons] = useState<Addon[]>([]);
   const [addonName, setAddonName] = useState("");
   const [addonDescription, setAddonDescription] = useState("");
   const [addonPrice, setAddonPrice] = useState("");
+  const [addonErrors, setAddonErrors] = useState<AddonErrors>({});
   const [showAddonForm, setShowAddonForm] = useState(false);
   const [product, setProduct] = useState<ProductResponse | null>(null);
-  const navigate = useNavigate();
-
-  const { id } = useParams<{ id?: string }>();
-  const isEdit = !!id;
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -76,111 +145,157 @@ export function ProductsDetails() {
   const [isActive, setActive] = useState<ProductStatusEnum>(
     ProductStatusEnum.DISABLED,
   );
-  const [stockEnabled, setStockEnabled] = useState<boolean>(false);
-  const [stock, setStock] = useState<string>("0");
-  const [saving, setSaving] = useState(false);
+  const [stockEnabled, setStockEnabled] = useState(false);
+  const [stock, setStock] = useState("0");
 
+  const [loadingProduct, setLoadingProduct] = useState(isEdit);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitted, setSubmitted] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  function alterationIsActive(): void {
-    const newStatus =
-      isActive === ProductStatusEnum.ACTIVED
-        ? ProductStatusEnum.DISABLED
-        : ProductStatusEnum.ACTIVED;
-
-    setActive(newStatus);
-  }
-
-  function alterationStockEnabled(): void {
-    setStockEnabled((v) => !v);
-    setErrors((prev) => ({ ...prev, stock: undefined }));
-  }
-
   useEffect(() => {
-    const fetchProduct = async () => {
-      if (!isEdit || !id) {
-        setProduct(null);
-        setMedia([]);
-        setName("");
-        setDescription("");
-        setCategory(ProductCategoryEnum.FOOD);
-        setPrice("");
-        setPromoPrice("");
-        setActive(ProductStatusEnum.DISABLED);
-        setStockEnabled(false);
+    let active = true;
+
+    const resetCreateForm = () => {
+      setProduct(null);
+      setMedia([]);
+      setName("");
+      setDescription("");
+      setCategory(ProductCategoryEnum.FOOD);
+      setPrice("");
+      setPromoPrice("");
+      setActive(ProductStatusEnum.DISABLED);
+      setStockEnabled(false);
       setStock("0");
-        setAddons([]);
-        setAddonName("");
-        setAddonDescription("");
-        setAddonPrice("");
-        setShowAddonForm(false);
-        setErrors({});
-        setSubmitted(false);
-        return;
-      }
-
-      const data = await ProductService.findOne(id);
-      setProduct(data);
-      setActive(data.isActive || ProductStatusEnum.DISABLED);
-      setStockEnabled(!!data.stockEnabled);
-      setMedia(
-        (data.images || []).map((img: ImageResponse) => ({
-          id: String(img.id ?? img.fileName ?? img.url),
-          url: img.url?.startsWith("http")
-            ? img.url
-            : `${API_BASE_URL}/${String(img.url || "").replace(/^\/+/, "")}`,
-          isPrimary: !!img.isPrimary,
-        })),
-      );
-
-      setName(data.name || "");
-      setDescription(data.description || "");
-      setCategory(
-        (data.category as ProductCategoryEnum) || ProductCategoryEnum.FOOD,
-      );
-      setPrice(data.price ? String(data.price).replace(".", ",") : "");
-      setPromoPrice(
-        data.promoPrice ? String(data.promoPrice).replace(".", ",") : "",
-      );
-      setStock(String(data.stock ?? 0));
-      setAddons(
-        (data.addons || []).map((addon) => ({
-          id: String(addon.id),
-          name: addon.name,
-          description: addon.description || "",
-          price: Number(addon.price || 0),
-          isActive: addon.isActive ?? true,
-        })),
-      );
+      setAddons([]);
       setAddonName("");
       setAddonDescription("");
       setAddonPrice("");
+      setAddonErrors({});
       setShowAddonForm(false);
       setErrors({});
       setSubmitted(false);
+      setLoadError(null);
     };
 
-    fetchProduct();
+    const fetchProduct = async () => {
+      if (!isEdit || !id) {
+        resetCreateForm();
+        setLoadingProduct(false);
+        return;
+      }
+
+      try {
+        setLoadingProduct(true);
+        setLoadError(null);
+        const data = await ProductService.findOne(id);
+        if (!active) return;
+
+        setProduct(data);
+        setActive(data.isActive || ProductStatusEnum.DISABLED);
+        setStockEnabled(!!data.stockEnabled);
+        setMedia(
+          (data.images || []).map((image: ImageResponse) => ({
+            id: String(image.id ?? image.fileName ?? image.url),
+            url: getImageUrl(image),
+            isPrimary: !!image.isPrimary,
+          })),
+        );
+        setName(data.name || "");
+        setDescription(data.description || "");
+        setCategory(
+          (data.category as ProductCategoryEnum) || ProductCategoryEnum.FOOD,
+        );
+        setPrice(toCurrencyInput(data.price));
+        setPromoPrice(toCurrencyInput(data.promoPrice));
+        setStock(String(data.stock ?? 0));
+        setAddons(
+          (data.addons || []).map((addon) => ({
+            id: String(addon.id),
+            name: addon.name,
+            description: addon.description || "",
+            price: Number(addon.price || 0),
+            isActive: addon.isActive ?? true,
+          })),
+        );
+        setAddonName("");
+        setAddonDescription("");
+        setAddonPrice("");
+        setAddonErrors({});
+        setShowAddonForm(false);
+        setErrors({});
+        setSubmitted(false);
+      } catch (error: unknown) {
+        if (!active) return;
+        const message = getErrorMessage(error, "Erro ao carregar produto.");
+        setLoadError(message);
+        toast.error(message);
+      } finally {
+        if (active) setLoadingProduct(false);
+      }
+    };
+
+    void fetchProduct();
+
+    return () => {
+      active = false;
+    };
   }, [id, isEdit]);
 
   const primaryId = useMemo(
-    () => media.find((m) => m.isPrimary)?.id ?? media[0]?.id,
+    () => media.find((item) => item.isPrimary)?.id ?? media[0]?.id,
     [media],
   );
 
-  const setPrimary = (mid: string) => {
-    setMedia((prev) => prev.map((m) => ({ ...m, isPrimary: m.id === mid })));
+  const primaryMedia = useMemo(
+    () => media.find((item) => item.id === primaryId) ?? media[0],
+    [media, primaryId],
+  );
+
+  const parsedPrice = parseDecimal(price);
+  const parsedPromoPrice = promoPrice.trim() ? parseDecimal(promoPrice) : null;
+  const hasPromoPrice =
+    parsedPromoPrice !== null && Number.isFinite(parsedPromoPrice);
+  const previewPrice = hasPromoPrice
+    ? parsedPromoPrice
+    : Number.isFinite(parsedPrice)
+      ? parsedPrice
+      : 0;
+
+  const selectedCategoryLabel =
+    categoryOptions.find((option) => option.value === category)?.label ||
+    "Categoria";
+
+  const saveLabel = isEdit ? "Salvar alterações" : "Criar produto";
+
+  const clearFieldError = (key: keyof FieldErrors) => {
+    if (!submitted && !errors[key]) return;
+    setErrors((prev) => ({ ...prev, [key]: undefined }));
   };
 
-  const removeMedia = (mid: string) => {
-    setMedia((prev) => prev.filter((m) => m.id !== mid));
+  const setPrimary = (mediaId: string) => {
+    setMedia((prev) =>
+      prev.map((item) => ({ ...item, isPrimary: item.id === mediaId })),
+    );
   };
 
-  const removeAddon = (aid: string) => {
-    setAddons((prev) => prev.filter((a) => a.id !== aid));
+  const removeMedia = (mediaId: string) => {
+    setMedia((prev) => {
+      const removed = prev.find((item) => item.id === mediaId);
+      if (removed?.file) URL.revokeObjectURL(removed.url);
+
+      const next = prev.filter((item) => item.id !== mediaId);
+      if (next.length && !next.some((item) => item.isPrimary)) {
+        next[0] = { ...next[0], isPrimary: true };
+      }
+      return next;
+    });
+  };
+
+  const removeAddon = (addonId: string) => {
+    setAddons((prev) => prev.filter((addon) => addon.id !== addonId));
   };
 
   const createAddonId = () => {
@@ -191,15 +306,28 @@ export function ProductsDetails() {
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   };
 
+  const resetAddonDraft = () => {
+    setAddonName("");
+    setAddonDescription("");
+    setAddonPrice("");
+    setAddonErrors({});
+    setShowAddonForm(false);
+  };
+
   const addAddon = () => {
     const cleanName = addonName.trim();
     const cleanDescription = addonDescription.trim();
-    const cleanPrice = toDot(addonPrice);
-    const priceNumber = Number(cleanPrice);
+    const priceNumber = parseDecimal(addonPrice);
+    const nextErrors: AddonErrors = {};
 
-    if (!cleanName || !Number.isFinite(priceNumber) || priceNumber < 0) {
-      return;
+    if (!cleanName) nextErrors.name = "Informe o nome do adicional";
+    if (!addonPrice.trim()) nextErrors.price = "Informe o preço";
+    else if (!Number.isFinite(priceNumber) || priceNumber < 0) {
+      nextErrors.price = "Preço inválido";
     }
+
+    setAddonErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return;
 
     setAddons((prev) => [
       ...prev,
@@ -211,29 +339,31 @@ export function ProductsDetails() {
         isActive: true,
       },
     ]);
-    setAddonName("");
-    setAddonDescription("");
-    setAddonPrice("");
-    setShowAddonForm(false);
+    resetAddonDraft();
   };
 
-  function deletFood(pid: string | undefined): void {
-    if (!pid) return;
-    ProductService.remove(pid);
-    navigate(-1);
-  }
+  const toggleProductStatus = () => {
+    setActive((current) =>
+      current === ProductStatusEnum.ACTIVED
+        ? ProductStatusEnum.DISABLED
+        : ProductStatusEnum.ACTIVED,
+    );
+  };
 
-  const toDot = (v: string) => v.replace(/\./g, "").replace(",", ".").trim();
+  const toggleStockEnabled = () => {
+    setStockEnabled((current) => !current);
+    setErrors((prev) => ({ ...prev, stock: undefined }));
+  };
 
-  function onPickFilesClick() {
+  const onPickFilesClick = () => {
     fileInputRef.current?.click();
-  }
+  };
 
-  function onFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || []);
+  const onFilesSelected = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
     if (!files.length) return;
 
-    const next = files.map((file) => ({
+    const nextMedia = files.map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}`,
       url: URL.createObjectURL(file),
       isPrimary: false,
@@ -241,60 +371,64 @@ export function ProductsDetails() {
     }));
 
     setMedia((prev) => {
-      const merged = [...prev, ...next];
-      if (!merged.some((m) => m.isPrimary) && merged.length) {
+      const merged = [...prev, ...nextMedia];
+      if (!merged.some((item) => item.isPrimary) && merged.length) {
         merged[0] = { ...merged[0], isPrimary: true };
       }
       return merged;
     });
 
-    e.target.value = "";
-  }
+    clearFieldError("media");
+    event.target.value = "";
+  };
 
   const validate = (): FieldErrors => {
     const next: FieldErrors = {};
+    const priceNumber = parseDecimal(price);
 
+    if (!media.length) next.media = "Adicione ao menos uma imagem";
     if (!name.trim()) next.name = "Preencha o nome do produto";
     if (!description.trim()) next.description = "Preencha a descrição";
     if (!category) next.category = "Selecione uma categoria";
-
-    const p = toDot(price);
-    const pNum = p ? Number(p) : NaN;
     if (!price.trim()) next.price = "Preencha o preço";
-    else if (!Number.isFinite(pNum) || pNum < 0) next.price = "Preço inválido";
+    else if (!Number.isFinite(priceNumber) || priceNumber < 0) {
+      next.price = "Preço inválido";
+    }
 
     if (promoPrice.trim()) {
-      const pp = toDot(promoPrice);
-      const ppNum = Number(pp);
-      if (!Number.isFinite(ppNum) || ppNum < 0)
+      const promoNumber = parseDecimal(promoPrice);
+      if (!Number.isFinite(promoNumber) || promoNumber < 0) {
         next.promoPrice = "Preço promocional inválido";
-      if (Number.isFinite(ppNum) && Number.isFinite(pNum) && ppNum > pNum)
+      } else if (Number.isFinite(priceNumber) && promoNumber > priceNumber) {
         next.promoPrice = "Promoção não pode ser maior que o preço base";
+      }
     }
 
     if (stockEnabled) {
-      const sNum = Number(String(stock ?? "").trim());
+      const stockNumber = Number(String(stock ?? "").trim());
       if (!String(stock ?? "").trim()) next.stock = "Informe o estoque";
-      else if (!Number.isInteger(sNum) || sNum < 0)
+      else if (!Number.isInteger(stockNumber) || stockNumber < 0) {
         next.stock = "Estoque inválido";
+      }
     }
 
     return next;
   };
 
   async function onSave(): Promise<void> {
-    if (saving) return;
+    if (saving || loadingProduct) return;
 
     setSubmitted(true);
+    setLoadError(null);
 
     const nextErrors = validate();
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length) {
       const firstKey = Object.keys(nextErrors)[0] as keyof FieldErrors;
-      const el = document.querySelector(`[data-field="${firstKey}"]`);
-      if (el instanceof HTMLElement) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      const element = document.querySelector(`[data-field="${firstKey}"]`);
+      if (element instanceof HTMLElement) {
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
       }
       return;
     }
@@ -303,10 +437,10 @@ export function ProductsDetails() {
       name: name.trim(),
       description: description.trim(),
       category,
-      price: Number(toDot(price)),
-      promoPrice: promoPrice.trim() ? Number(toDot(promoPrice)) : undefined,
+      price: parseDecimal(price),
+      promoPrice: promoPrice.trim() ? parseDecimal(promoPrice) : undefined,
       isActive,
-      stockEnabled: !!stockEnabled,
+      stockEnabled,
       stock: stockEnabled ? Number(stock || 0) : 0,
       addons: addons.map<ProductAddonRequest>((addon) => ({
         id: addon.id,
@@ -315,42 +449,110 @@ export function ProductsDetails() {
         price: addon.price,
         isActive: addon.isActive ?? true,
       })),
+      ...(isEdit
+        ? {
+            existingImageIds: media
+              .filter((item) => !item.file)
+              .map((item) => item.id),
+            primaryImageId: primaryId,
+          }
+        : {}),
     };
 
-    const filesToUpload = media
-      .filter((m) => m.file instanceof File)
-      .map((m) => m.file as File);
+    const orderedMedia = [...media].sort((a, b) => {
+      if (a.id === primaryId) return -1;
+      if (b.id === primaryId) return 1;
+      return 0;
+    });
+    const filesToUpload = orderedMedia
+      .filter((item) => item.file instanceof File)
+      .map((item) => item.file as File);
 
     try {
       setSaving(true);
 
       if (isEdit && id) {
-        await ProductService.update(id, payload);
+        await ProductService.update(id, payload, filesToUpload);
+        toast.success("Produto atualizado com sucesso");
         navigate(-1);
         return;
       }
 
       await ProductService.create(payload, filesToUpload);
+      toast.success("Produto criado com sucesso");
       navigate(-1);
+    } catch (error: unknown) {
+      const message = getErrorMessage(error, "Erro ao salvar produto.");
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
   }
 
-  const inputErrorClass = (key: keyof FieldErrors) =>
+  async function deleteProduct(): Promise<void> {
+    if (!product?.id || deleting) return;
+    const confirmed = window.confirm(
+      `Excluir "${product.name}" do cardápio? Esta ação não pode ser desfeita.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      setDeleting(true);
+      await ProductService.remove(product.id);
+      toast.success("Produto excluído do cardápio");
+      navigate(-1);
+    } catch (error: unknown) {
+      const message = getErrorMessage(error, "Erro ao excluir produto.");
+      setLoadError(message);
+      toast.error(message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const inputClass = (key: keyof FieldErrors) =>
     submitted && errors[key]
       ? `${styles.input} ${styles.inputError}`
       : styles.input;
 
-  const textareaErrorClass = (key: keyof FieldErrors) =>
+  const textareaClass = (key: keyof FieldErrors) =>
     submitted && errors[key]
       ? `${styles.textarea} ${styles.inputError}`
       : styles.textarea;
 
-  const selectErrorClass = (key: keyof FieldErrors) =>
+  const selectClass = (key: keyof FieldErrors) =>
     submitted && errors[key]
       ? `${styles.select} ${styles.inputError}`
       : styles.select;
+
+  const fieldClass = (key: keyof FieldErrors) =>
+    submitted && errors[key]
+      ? `${styles.field} ${styles.fieldInvalid}`
+      : styles.field;
+
+  if (loadingProduct) {
+    return (
+      <div
+        className={styles.page}
+        style={
+          {
+            "--bgPrimary": Colors.Background.primary,
+            "--bgSecondary": Colors.Background.secondary,
+            "--highlight": Colors.Highlight.primary,
+            "--textPrimary": Colors.Texts.primary,
+            "--textSecondary": Colors.Texts.secondary,
+          } as ProductDetailsCssVars
+        }
+      >
+        <div className={styles.loadingState}>
+          <FiLoader className={styles.spinner} />
+          <strong>Carregando produto</strong>
+          <span>Buscando informações, imagens e adicionais.</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -370,133 +572,224 @@ export function ProductsDetails() {
         type="file"
         accept="image/*"
         multiple
-        style={{ display: "none" }}
+        className={styles.fileInput}
         onChange={onFilesSelected}
       />
 
-      <div className={styles.top}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button
-              className={styles.backBtn}
-              type="button"
-              onClick={() => navigate(-1)}
-              aria-label="Voltar"
-            >
-              ←
-            </button>
+      <header className={styles.header}>
+        <div className={styles.heading}>
+          <button
+            className={styles.iconButton}
+            type="button"
+            onClick={() => navigate(-1)}
+            aria-label="Voltar"
+          >
+            <FiArrowLeft />
+          </button>
 
+          <div>
+            <div className={styles.eyebrow}>
+              {isEdit ? "Edição de item" : "Novo item do cardápio"}
+            </div>
             <h1 className={styles.title}>
-              {isEdit ? "EDITAR PRODUTO" : "CRIAR PRODUTO"}
+              {isEdit ? "Editar produto" : "Criar produto"}
             </h1>
+            <p className={styles.subtitle}>
+              Cadastre imagem, descrição, preço, estoque e adicionais em uma
+              única tela.
+            </p>
           </div>
-          <p className={styles.subtitle}>
-            {isEdit
-              ? "Atualize as informações, mídias e valores do seu produto."
-              : "Preencha as informações, mídias e valores do seu produto."}
-          </p>
         </div>
 
         <div className={styles.topActions}>
-          <button className={styles.btnGhost} type="button">
+          <button
+            className={styles.secondaryBtn}
+            type="button"
+            disabled={!isEdit || saving || deleting}
+            onClick={() => window.open("http://localhost:5174", "_blank")}
+          >
             <FiEye />
-            Ver no App
+            Ver no app
           </button>
-          <button className={styles.discard} type="button">
+          <button
+            className={styles.secondaryBtn}
+            type="button"
+            disabled={saving || deleting}
+            onClick={() => navigate(-1)}
+          >
             Descartar
           </button>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <button
-              className={styles.save}
-              type="button"
-              onClick={onSave}
-              disabled={saving}
-            >
-              <span className={styles.check}>✓</span>
-              {isEdit ? "SALVAR ALTERAÇÕES" : "CRIAR PRODUTO"}
-            </button>
+          <button
+            className={styles.saveBtn}
+            type="button"
+            onClick={onSave}
+            disabled={saving || deleting}
+          >
+            {saving ? (
+              <FiLoader className={styles.spinner} />
+            ) : (
+              <FiSave />
+            )}
+            {saving ? "Salvando..." : saveLabel}
+          </button>
+        </div>
+      </header>
 
-            {isEdit && (
-              <button
-                className={styles.delete}
-                type="button"
-                onClick={() => deletFood(product?.id)}
+      {loadError ? (
+        <div className={styles.alert}>
+          <FiAlertCircle />
+          <span>{loadError}</span>
+        </div>
+      ) : null}
+
+      <div className={styles.heroGrid}>
+        <section
+          className={`${styles.galleryPanel} ${
+            submitted && errors.media ? styles.panelError : ""
+          }`}
+          data-field="media"
+        >
+          <div className={styles.sectionHeader}>
+            <div>
+              <span className={styles.sectionKicker}>Galeria</span>
+              <h2 className={styles.sectionTitle}>Imagens do produto</h2>
+            </div>
+            <button
+              className={styles.smallAction}
+              type="button"
+              onClick={onPickFilesClick}
+            >
+              <FiUploadCloud />
+              Enviar fotos
+            </button>
+          </div>
+
+          {submitted && errors.media ? (
+            <div className={styles.fieldError}>{errors.media}</div>
+          ) : null}
+
+          <div className={styles.gallery}>
+            {media.map((item) => (
+              <div
+                key={item.id}
+                className={`${styles.mediaCard} ${
+                  item.id === primaryId ? styles.mediaCardActive : ""
+                }`}
               >
-                <BiTrash size={13} />
-                Excluir do Cardápio
-              </button>
+                {item.id === primaryId ? (
+                  <span className={styles.primaryTag}>Principal</span>
+                ) : null}
+
+                <img src={item.url} alt="" className={styles.mediaImg} />
+
+                <div className={styles.mediaActions}>
+                  <button
+                    className={styles.mediaBtn}
+                    type="button"
+                    onClick={() => setPrimary(item.id)}
+                    aria-label="Definir como principal"
+                  >
+                    <FiCheck />
+                  </button>
+                  <button
+                    className={styles.mediaBtn}
+                    type="button"
+                    onClick={() => removeMedia(item.id)}
+                    aria-label="Excluir imagem"
+                  >
+                    <FiTrash2 />
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <button
+              className={styles.uploadCard}
+              type="button"
+              onClick={onPickFilesClick}
+            >
+              <FiPlus className={styles.uploadIcon} />
+              <strong>Adicionar imagem</strong>
+              <span>PNG, JPG ou WEBP</span>
+            </button>
+          </div>
+        </section>
+
+        <aside className={styles.previewPanel}>
+          <div className={styles.previewHeader}>
+            <span className={styles.sectionKicker}>Prévia</span>
+            <span
+              className={`${styles.statusBadge} ${
+                isActive === ProductStatusEnum.ACTIVED
+                  ? styles.statusOn
+                  : styles.statusOff
+              }`}
+            >
+              {isActive === ProductStatusEnum.ACTIVED
+                ? "Disponível"
+                : "Indisponível"}
+            </span>
+          </div>
+
+          <div className={styles.previewImage}>
+            {primaryMedia ? (
+              <img src={primaryMedia.url} alt={name || "Produto"} />
+            ) : (
+              <div className={styles.previewPlaceholder}>
+                <FiImage />
+                <span>Sem imagem</span>
+              </div>
             )}
           </div>
-        </div>
-      </div>
 
-      <div className={styles.sectionLabel}>
-        <span className={styles.sectionDot} />
-        GALERIA DE IMAGENS
-      </div>
+          <div className={styles.previewBody}>
+            <h2>{name.trim() || "Nome do produto"}</h2>
+            <strong>{currencyBRL(previewPrice)}</strong>
+            <p>{description.trim() || "Descrição do produto no cardápio."}</p>
+          </div>
 
-      <div className={styles.gallery}>
-        {media.map((m) => (
-          <div
-            key={m.id}
-            className={`${styles.mediaCard} ${
-              m.id === primaryId ? styles.mediaCardActive : ""
-            }`}
-          >
-            {m.id === primaryId ? (
-              <div className={styles.primaryTag}>PRINCIPAL</div>
-            ) : null}
-
-            <img src={m.url} alt="" className={styles.mediaImg} />
-
-            <div className={styles.mediaActions}>
-              <button
-                className={styles.mediaBtn}
-                type="button"
-                onClick={() => setPrimary(m.id)}
-                aria-label="Definir como principal"
-              >
-                ★
-              </button>
-              <button
-                className={styles.mediaBtn}
-                type="button"
-                onClick={() => removeMedia(m.id)}
-                aria-label="Excluir"
-              >
-                <FiTrash2 />
-              </button>
+          <div className={styles.previewMeta}>
+            <div>
+              <FiPackage />
+              <span>{selectedCategoryLabel}</span>
+            </div>
+            <div>
+              <FiPlus />
+              <span>{addons.length} adicionais</span>
+            </div>
+            <div>
+              <FiDollarSign />
+              <span>{stockEnabled ? `${stock || 0} em estoque` : "Sem estoque"}</span>
             </div>
           </div>
-        ))}
-
-        <button
-          className={styles.uploadCard}
-          type="button"
-          onClick={onPickFilesClick}
-        >
-          <div className={styles.uploadIcon}>+</div>
-          <div className={styles.uploadText}>Upload mais fotos</div>
-        </button>
+        </aside>
       </div>
 
-      <div className={styles.grid}>
-        <div className={styles.panel}>
+      <div className={styles.formGrid}>
+        <section className={styles.panel}>
           <div className={styles.panelHeader}>
-            <span className={styles.panelIcon}>📄</span>
-            <span className={styles.panelTitle}>Informações Principais</span>
+            <span className={styles.panelIcon}>
+              <FiPackage />
+            </span>
+            <div>
+              <h2 className={styles.panelTitle}>Informações principais</h2>
+              <p className={styles.panelSubtitle}>
+                Nome, categoria, descrição e disponibilidade.
+              </p>
+            </div>
           </div>
 
           <div className={styles.form}>
-            <div className={styles.field} data-field="name">
-              <label className={styles.label}>NOME DO PRODUTO</label>
+            <div className={fieldClass("name")} data-field="name">
+              <label className={styles.label}>Nome do produto</label>
               <input
-                className={inputErrorClass("name")}
+                className={inputClass("name")}
                 value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  if (submitted) setErrors((p) => ({ ...p, name: undefined }));
+                onChange={(event) => {
+                  setName(event.target.value);
+                  clearFieldError("name");
                 }}
+                placeholder="Ex: Ambug duplo"
               />
               {submitted && errors.name ? (
                 <div className={styles.fieldError}>{errors.name}</div>
@@ -504,25 +797,21 @@ export function ProductsDetails() {
             </div>
 
             <div className={styles.row2}>
-              <div className={styles.field} data-field="category">
-                <label className={styles.label}>CATEGORIA</label>
+              <div className={fieldClass("category")} data-field="category">
+                <label className={styles.label}>Categoria</label>
                 <select
-                  className={selectErrorClass("category")}
+                  className={selectClass("category")}
                   value={category}
-                  onChange={(e) => {
-                    setCategory(e.target.value as ProductCategoryEnum);
-                    if (submitted)
-                      setErrors((p) => ({ ...p, category: undefined }));
+                  onChange={(event) => {
+                    setCategory(event.target.value as ProductCategoryEnum);
+                    clearFieldError("category");
                   }}
                 >
-                  <option value={ProductCategoryEnum.FOOD}>Comidas</option>
-                  <option value={ProductCategoryEnum.DRINK}>Bebidas</option>
-                  <option value={ProductCategoryEnum.ADDON}>
-                    Acompanhamentos
-                  </option>
-                  <option value={ProductCategoryEnum.DESSERT}>
-                    Sobremesas
-                  </option>
+                  {categoryOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
                 {submitted && errors.category ? (
                   <div className={styles.fieldError}>{errors.category}</div>
@@ -530,8 +819,8 @@ export function ProductsDetails() {
               </div>
 
               <div className={styles.field}>
-                <label className={styles.label}>STATUS</label>
-                <div className={styles.availability}>
+                <label className={styles.label}>Status no cardápio</label>
+                <div className={styles.toggleRow}>
                   <button
                     type="button"
                     className={`${styles.pill} ${
@@ -539,53 +828,65 @@ export function ProductsDetails() {
                         ? styles.pillOn
                         : styles.pillOff
                     }`}
-                    aria-label="Disponível"
-                    onClick={() => alterationIsActive()}
+                    aria-pressed={isActive === ProductStatusEnum.ACTIVED}
+                    onClick={toggleProductStatus}
                   >
                     <span className={styles.pillDot} />
                   </button>
-                  <span className={styles.disp}>DISP.</span>
+                  <span className={styles.toggleText}>
+                    {isActive === ProductStatusEnum.ACTIVED
+                      ? "Disponível"
+                      : "Indisponível"}
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className={styles.field} data-field="description">
-              <label className={styles.label}>DESCRIÇÃO DETALHADA</label>
+            <div className={fieldClass("description")} data-field="description">
+              <label className={styles.label}>Descrição detalhada</label>
               <textarea
-                className={textareaErrorClass("description")}
+                className={textareaClass("description")}
                 value={description}
-                onChange={(e) => {
-                  setDescription(e.target.value);
-                  if (submitted)
-                    setErrors((p) => ({ ...p, description: undefined }));
+                onChange={(event) => {
+                  setDescription(event.target.value);
+                  clearFieldError("description");
                 }}
+                placeholder="Descreva ingredientes, tamanho e diferenciais."
               />
               {submitted && errors.description ? (
                 <div className={styles.fieldError}>{errors.description}</div>
               ) : null}
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className={styles.panel}>
+        <aside className={styles.panel}>
           <div className={styles.panelHeader}>
-            <span className={styles.panelIcon}>💳</span>
-            <span className={styles.panelTitle}>Precificação</span>
+            <span className={styles.panelIcon}>
+              <FiDollarSign />
+            </span>
+            <div>
+              <h2 className={styles.panelTitle}>Precificação</h2>
+              <p className={styles.panelSubtitle}>
+                Valores e controle de estoque.
+              </p>
+            </div>
           </div>
 
           <div className={styles.form}>
-            <div className={styles.field} data-field="price">
-              <label className={styles.label}>PREÇO BASE</label>
+            <div className={fieldClass("price")} data-field="price">
+              <label className={styles.label}>Preço base</label>
               <div className={styles.moneyInput}>
                 <span className={styles.moneyPrefix}>R$</span>
                 <input
-                  className={inputErrorClass("price")}
+                  className={inputClass("price")}
                   value={price}
-                  onChange={(e) => {
-                    setPrice(e.target.value);
-                    if (submitted)
-                      setErrors((p) => ({ ...p, price: undefined }));
+                  onChange={(event) => {
+                    setPrice(event.target.value);
+                    clearFieldError("price");
                   }}
+                  inputMode="decimal"
+                  placeholder="0,00"
                 />
               </div>
               {submitted && errors.price ? (
@@ -593,22 +894,19 @@ export function ProductsDetails() {
               ) : null}
             </div>
 
-            <div className={styles.field} data-field="promoPrice">
-              <label className={styles.label}>PREÇO PROMOCIONAL</label>
+            <div className={fieldClass("promoPrice")} data-field="promoPrice">
+              <label className={styles.label}>Preço promocional</label>
               <div className={styles.moneyInput}>
                 <span className={styles.moneyPrefix}>R$</span>
                 <input
-                  className={
-                    submitted && errors.promoPrice
-                      ? `${styles.input} ${styles.inputMuted} ${styles.inputError}`
-                      : `${styles.input} ${styles.inputMuted}`
-                  }
+                  className={`${inputClass("promoPrice")} ${styles.inputMuted}`}
                   value={promoPrice}
-                  onChange={(e) => {
-                    setPromoPrice(e.target.value);
-                    if (submitted)
-                      setErrors((p) => ({ ...p, promoPrice: undefined }));
+                  onChange={(event) => {
+                    setPromoPrice(event.target.value);
+                    clearFieldError("promoPrice");
                   }}
+                  inputMode="decimal"
+                  placeholder="0,00"
                 />
               </div>
               {submitted && errors.promoPrice ? (
@@ -621,140 +919,161 @@ export function ProductsDetails() {
             </div>
 
             <div className={styles.field}>
-              <label className={styles.label}>INVENTÁRIO</label>
+              <label className={styles.label}>Inventário</label>
               <div className={styles.inventory}>
-                <span className={styles.inventoryLabel}>
-                  Controle de estoque
-                </span>
-                <div className={styles.availability}>
+                <span>Controle de estoque</span>
+                <div className={styles.toggleRow}>
                   <button
                     type="button"
                     className={`${styles.pill} ${
                       stockEnabled ? styles.pillOn : styles.pillOff
                     }`}
-                    aria-label="Disponível"
-                    onClick={() => alterationStockEnabled()}
+                    aria-pressed={stockEnabled}
+                    onClick={toggleStockEnabled}
                   >
                     <span className={styles.pillDot} />
                   </button>
-                  <span className={styles.disp}>DISP.</span>
+                  <span className={styles.toggleText}>
+                    {stockEnabled ? "Ativo" : "Inativo"}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {stockEnabled && (
-              <div className={styles.field} data-field="stock">
-                <label className={styles.label}>ESTOQUE</label>
+            {stockEnabled ? (
+              <div className={fieldClass("stock")} data-field="stock">
+                <label className={styles.label}>Estoque</label>
                 <input
-                  className={inputErrorClass("stock")}
+                  className={inputClass("stock")}
                   value={stock}
-                  onChange={(e) => {
-                    setStock(e.target.value);
-                    if (submitted)
-                      setErrors((p) => ({ ...p, stock: undefined }));
+                  onChange={(event) => {
+                    setStock(event.target.value);
+                    clearFieldError("stock");
                   }}
+                  inputMode="numeric"
+                  placeholder="0"
                 />
                 {submitted && errors.stock ? (
                   <div className={styles.fieldError}>{errors.stock}</div>
                 ) : null}
               </div>
-            )}
+            ) : null}
           </div>
-        </div>
+        </aside>
       </div>
 
-      <div className={styles.addonsPanel}>
+      <section className={styles.addonsPanel}>
         <div className={styles.addonsHeader}>
-          <div className={styles.addonsTitle}>
-            <span className={styles.addonDot}>+</span>
-            Adicionais
+          <div>
+            <span className={styles.sectionKicker}>Complementos</span>
+            <h2 className={styles.sectionTitle}>Adicionais do produto</h2>
           </div>
           <button
-            className={styles.linkNew}
+            className={styles.smallAction}
             type="button"
-            onClick={() => setShowAddonForm((v) => !v)}
+            onClick={() => setShowAddonForm((current) => !current)}
           >
-            + Vincular Novo
+            <FiPlus />
+            {showAddonForm ? "Fechar" : "Novo adicional"}
           </button>
         </div>
 
-        {showAddonForm && (
+        {showAddonForm ? (
           <div className={styles.addonForm}>
-            <div className={styles.field}>
-              <label className={styles.label}>NOME DO ADICIONAL</label>
+            <div
+              className={`${styles.field} ${
+                addonErrors.name ? styles.fieldInvalid : ""
+              }`}
+            >
+              <label className={styles.label}>Nome do adicional</label>
               <input
-                className={styles.input}
+                className={`${styles.input} ${
+                  addonErrors.name ? styles.inputError : ""
+                }`}
                 value={addonName}
-                onChange={(e) => setAddonName(e.target.value)}
+                onChange={(event) => {
+                  setAddonName(event.target.value);
+                  setAddonErrors((prev) => ({ ...prev, name: undefined }));
+                }}
                 placeholder="Ex: Bacon extra"
               />
+              {addonErrors.name ? (
+                <div className={styles.fieldError}>{addonErrors.name}</div>
+              ) : null}
             </div>
 
             <div className={styles.field}>
-              <label className={styles.label}>DESCRIÇÃO</label>
+              <label className={styles.label}>Descrição</label>
               <input
                 className={styles.input}
                 value={addonDescription}
-                onChange={(e) => setAddonDescription(e.target.value)}
+                onChange={(event) => setAddonDescription(event.target.value)}
                 placeholder="Ex: Fatia extra crocante"
               />
             </div>
 
-            <div className={styles.field}>
-              <label className={styles.label}>PREÇO</label>
+            <div
+              className={`${styles.field} ${
+                addonErrors.price ? styles.fieldInvalid : ""
+              }`}
+            >
+              <label className={styles.label}>Preço</label>
               <div className={styles.moneyInput}>
                 <span className={styles.moneyPrefix}>R$</span>
                 <input
-                  className={styles.input}
+                  className={`${styles.input} ${
+                    addonErrors.price ? styles.inputError : ""
+                  }`}
                   value={addonPrice}
-                  onChange={(e) => setAddonPrice(e.target.value)}
+                  onChange={(event) => {
+                    setAddonPrice(event.target.value);
+                    setAddonErrors((prev) => ({ ...prev, price: undefined }));
+                  }}
+                  inputMode="decimal"
                   placeholder="0,00"
                 />
               </div>
+              {addonErrors.price ? (
+                <div className={styles.fieldError}>{addonErrors.price}</div>
+              ) : null}
             </div>
 
             <div className={styles.addonFormActions}>
               <button
-                className={styles.discard}
+                className={styles.secondaryBtn}
                 type="button"
-                onClick={() => {
-                  setAddonName("");
-                  setAddonDescription("");
-                  setAddonPrice("");
-                  setShowAddonForm(false);
-                }}
+                onClick={resetAddonDraft}
               >
                 Cancelar
               </button>
-              <button className={styles.save} type="button" onClick={addAddon}>
+              <button className={styles.saveBtnCompact} type="button" onClick={addAddon}>
+                <FiCheck />
                 Adicionar
               </button>
             </div>
           </div>
-        )}
+        ) : null}
 
         <div className={styles.addonsList}>
           {addons.length ? (
-            addons.map((a) => (
-              <div key={a.id} className={styles.addonChip}>
+            addons.map((addon) => (
+              <div key={addon.id} className={styles.addonChip}>
                 <div className={styles.addonLeft}>
-                  <span className={styles.addonIcon}>+</span>
+                  <span className={styles.addonIcon}>
+                    <FiPlus />
+                  </span>
                   <div>
-                    <div className={styles.addonName}>{a.name}</div>
-                    {a.description ? (
-                      <div className={styles.addonDesc}>{a.description}</div>
-                    ) : null}
-                    <div className={styles.addonPrice}>
-                      {currencyBRL(a.price)}
-                    </div>
+                    <strong>{addon.name}</strong>
+                    {addon.description ? <p>{addon.description}</p> : null}
+                    <span>{currencyBRL(addon.price)}</span>
                   </div>
                 </div>
 
                 <button
                   className={styles.addonRemove}
                   type="button"
-                  onClick={() => removeAddon(a.id)}
-                  aria-label="Remover"
+                  onClick={() => removeAddon(addon.id)}
+                  aria-label="Remover adicional"
                 >
                   <FiX />
                 </button>
@@ -766,7 +1085,25 @@ export function ProductsDetails() {
             </div>
           )}
         </div>
-      </div>
+
+        {isEdit ? (
+          <div className={styles.dangerZone}>
+            <div>
+              <strong>Excluir produto</strong>
+              <span>Remove o item do cardápio e das listagens do admin.</span>
+            </div>
+            <button
+              className={styles.deleteBtn}
+              type="button"
+              onClick={deleteProduct}
+              disabled={saving || deleting}
+            >
+              {deleting ? <FiLoader className={styles.spinner} /> : <FiTrash2 />}
+              {deleting ? "Excluindo..." : "Excluir produto"}
+            </button>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }

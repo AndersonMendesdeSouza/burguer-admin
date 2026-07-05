@@ -65,7 +65,10 @@ function formatReceivedAt(value?: Date | string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Recebimento nao informado";
 
-  const diffMinutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+  const diffMinutes = Math.max(
+    0,
+    Math.floor((Date.now() - date.getTime()) / 60000),
+  );
   const elapsed =
     diffMinutes < 1
       ? "Agora"
@@ -74,6 +77,31 @@ function formatReceivedAt(value?: Date | string) {
         : `Ha ${diffMinutes} minutos`;
 
   return `Recebido em ${formatDateTime(value)} • ${elapsed}`;
+}
+
+function formatAddressLine(order: OrderResponseDto) {
+  if (!order.address) return "Endereco nao informado";
+  return `${order.address.street}, ${order.address.number}`;
+}
+
+function formatAddressDetails(order: OrderResponseDto) {
+  if (!order.address) return "";
+
+  return [
+    order.address.neighborhood,
+    `${order.address.city}/${order.address.state}`,
+    `CEP ${order.address.zipCode}`,
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
+
+function formatAddressComplement(order: OrderResponseDto) {
+  if (!order.address) return "";
+
+  return [order.address.complement, order.address.reference]
+    .filter(Boolean)
+    .join(" | ");
 }
 
 function getTimelineStatus(
@@ -160,7 +188,11 @@ export default function OrderDetails() {
       <div className={styles.page} style={pageStyle}>
         <header className={styles.topbar}>
           <div className={styles.topbarLeft}>
-            <button className={styles.iconBtn} aria-label="Voltar" onClick={() => navigate(-1)}>
+            <button
+              className={styles.iconBtn}
+              aria-label="Voltar"
+              onClick={() => navigate(-1)}
+            >
               ←
             </button>
             <div className={styles.topbarTitleWrap}>
@@ -178,12 +210,18 @@ export default function OrderDetails() {
       <div className={styles.page} style={pageStyle}>
         <header className={styles.topbar}>
           <div className={styles.topbarLeft}>
-            <button className={styles.iconBtn} aria-label="Voltar" onClick={() => navigate(-1)}>
+            <button
+              className={styles.iconBtn}
+              aria-label="Voltar"
+              onClick={() => navigate(-1)}
+            >
               ←
             </button>
             <div className={styles.topbarTitleWrap}>
               <h1 className={styles.title}>Pedido nao encontrado</h1>
-              <div className={styles.subtitle}>{error || "Pedido indisponivel."}</div>
+              <div className={styles.subtitle}>
+                {error || "Pedido indisponivel."}
+              </div>
             </div>
           </div>
         </header>
@@ -205,17 +243,25 @@ export default function OrderDetails() {
 
           <div className={styles.topbarTitleWrap}>
             <div className={styles.titleRow}>
-              <h1 className={styles.title}>Pedido {formatOrderCode(order.code)}</h1>
+              <h1 className={styles.title}>
+                Pedido {formatOrderCode(order.code)}
+              </h1>
               <span className={styles.statusPill}>
                 {statusLabel[order.status] || order.status}
               </span>
             </div>
-            <div className={styles.subtitle}>{formatReceivedAt(order.createdAt)}</div>
+            <div className={styles.subtitle}>
+              {formatReceivedAt(order.createdAt)}
+            </div>
           </div>
         </div>
 
         <div className={styles.topbarRight}>
-          <button className={styles.btnGhost} type="button" onClick={() => window.print()}>
+          <button
+            className={styles.btnGhost}
+            type="button"
+            onClick={() => window.print()}
+          >
             Imprimir Pedido
           </button>
         </div>
@@ -256,18 +302,26 @@ export default function OrderDetails() {
                           {item.quantity}x {item.name}
                         </div>
                         <div className={styles.itemPrice}>
-                          {formatBRL(item.totalPrice || Number(item.unitPrice) * item.quantity)}
+                          {formatBRL(
+                            item.totalPrice ||
+                              Number(item.unitPrice) * item.quantity,
+                          )}
                         </div>
                       </div>
 
                       {item.description ? (
-                        <div className={styles.itemDesc}>{item.description}</div>
+                        <div className={styles.itemDesc}>
+                          {item.description}
+                        </div>
                       ) : null}
 
                       {item.addons?.length ? (
                         <div className={styles.itemDesc}>
                           {item.addons
-                            .map((addon) => `${addon.quantity ?? 1}x ${addon.name}`)
+                            .map(
+                              (addon) =>
+                                `${addon.quantity ?? 1}x ${addon.name}`,
+                            )
                             .join(", ")}
                         </div>
                       ) : null}
@@ -275,7 +329,9 @@ export default function OrderDetails() {
                       {item.observations ? (
                         <div className={styles.obsBox}>
                           <div className={styles.obsTitle}>OBSERVACOES:</div>
-                          <div className={styles.obsText}>{item.observations}</div>
+                          <div className={styles.obsText}>
+                            {item.observations}
+                          </div>
                         </div>
                       ) : null}
                     </div>
@@ -359,14 +415,16 @@ export default function OrderDetails() {
 
             <div className={styles.addressBlock}>
               <div className={styles.addressLine1}>
-                {order.addressStreet || "Endereco nao informado"}
+                {formatAddressLine(order)}
               </div>
-              {order.addressCityState ? (
-                <div className={styles.addressLine2}>{order.addressCityState}</div>
+              {formatAddressDetails(order) ? (
+                <div className={styles.addressLine2}>
+                  {formatAddressDetails(order)}
+                </div>
               ) : null}
-              {order.addressComplement ? (
+              {formatAddressComplement(order) ? (
                 <div className={styles.addressLine3}>
-                  {order.addressComplement}
+                  {formatAddressComplement(order)}
                 </div>
               ) : null}
             </div>
@@ -402,7 +460,10 @@ export default function OrderDetails() {
                 history.map((h, idx) => {
                   const isLast = idx === history.length - 1;
                   return (
-                    <div key={`${h.label}-${idx}`} className={styles.timelineRow}>
+                    <div
+                      key={`${h.label}-${idx}`}
+                      className={styles.timelineRow}
+                    >
                       <div className={styles.tlLeft}>
                         <div
                           className={`${styles.tlDot} ${

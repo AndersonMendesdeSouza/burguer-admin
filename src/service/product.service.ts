@@ -53,7 +53,30 @@ export const ProductService = {
   update: async (
     id: string,
     product: Partial<ProductRequest>,
+    files?: File[],
   ): Promise<ProductResponse> => {
+    if (files?.length) {
+      const formData = new FormData();
+
+      Object.entries(product).forEach(([key, value]) => {
+        appendFormValue(formData, key, value);
+      });
+
+      files.forEach((file) => formData.append("images", file));
+
+      const response = await api.patch<ProductResponse>(
+        `${API_URL}/${id}`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        },
+      );
+
+      return response.data;
+    }
+
     const response = await api.patch<ProductResponse>(
       `${API_URL}/${id}`,
       product,

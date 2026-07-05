@@ -1,6 +1,7 @@
 import type { OrderItem } from "../../types/Orders-type";
 import type { OrderStatusEnum } from "../enums/orders-status.enum";
 import type { PaymentMethodEnum } from "../enums/payment-method.enum";
+import type { AddressResponseDto } from "./address-response.dto";
 
 type OrderHistory = {
   status: OrderStatusEnum;
@@ -11,14 +12,14 @@ type OrderHistory = {
 
 export interface OrderResponseDto {
   id: string;
+  userId?: string;
+  addressId?: string;
+  address?: AddressResponseDto;
   code: number;
   status: OrderStatusEnum;
   paymentMethod: PaymentMethodEnum;
   customerName: string;
   customerPhone: string;
-  addressStreet: string;
-  addressCityState: string;
-  addressComplement?: string;
   subtotal: string;
   deliveryFee: string;
   discount: string;
