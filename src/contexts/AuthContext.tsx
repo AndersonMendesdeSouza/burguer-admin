@@ -30,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsAuthenticated(true);
       } catch {
         localStorage.removeItem("token");
+        localStorage.removeItem("userId");
         setIsAuthenticated(false);
       } finally {
         setLoading(false);
@@ -46,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   function logout() {
     localStorage.removeItem("token");
+    localStorage.removeItem("userId");
     setIsAuthenticated(false);
   }
 

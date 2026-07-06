@@ -1,13 +1,16 @@
-import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties, FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import styles from "./OrderDetails.module.css";
 import Colors from "../../themes/Colors";
 import { OrderService } from "../../service/order.service";
+import { ChatService } from "../../service/chat.service";
+import { ChatMessageSenderType } from "../../dtos/enums/chat-message-sender-type.enum";
 import type { OrderResponseDto } from "../../dtos/response/orders-response.dto";
 import type { OrderStatusEnum } from "../../dtos/enums/orders-status.enum";
 import type { PaymentMethodEnum } from "../../dtos/enums/payment-method.enum";
 import { formatOrderCode } from "../../utils/formatOrderCode";
+import type { ChatMessageResponseDto } from "../../dtos/response/chat-message-response.dto";
 
 type TimelineStatus = "done" | "current" | "pending";
 
@@ -18,6 +21,8 @@ type OrderDetailsCssVars = CSSProperties & {
   "--textSecondary": string;
   "--highlight": string;
 };
+
+const CHAT_POLLING_INTERVAL_MS = 10_000;
 
 const statusLabel: Record<OrderStatusEnum, string> = {
   RECEIVED: "RECEBIDO",
@@ -54,6 +59,17 @@ function formatDateTime(value?: Date | string) {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatChatTime(value?: Date | string) {
+  if (!value) return "--:--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--:--";
+
+  return date.toLocaleTimeString("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -117,12 +133,25 @@ function getTimelineStatus(
   return "done";
 }
 
+function sortChatMessages(messages: ChatMessageResponseDto[]) {
+  return [...messages].sort(
+    (a, b) =>
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+}
+
 export default function OrderDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [order, setOrder] = useState<OrderResponseDto | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatMessages, setChatMessages] = useState<ChatMessageResponseDto[]>(
+    [],
+  );
+  const [isSendingChatMessage, setIsSendingChatMessage] = useState(false);
+  const chatMessagesRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -159,6 +188,64 @@ export default function OrderDetails() {
     };
   }, [id]);
 
+  useEffect(() => {
+    setChatMessages(sortChatMessages(order?.chat?.messages || []));
+  }, [order?.chat?.messages]);
+
+  useEffect(() => {
+    if (!id) return;
+
+    let active = true;
+    let timeoutId: number | undefined;
+
+    async function loadChat() {
+      try {
+        const chat = await ChatService.findByOrderId(id as string);
+        if (!active) return;
+
+        const messages = sortChatMessages(chat.messages || []);
+
+        setOrder((current) =>
+          current
+            ? {
+                ...current,
+                chatId: chat.id,
+                chat: {
+                  ...chat,
+                  messages,
+                },
+              }
+            : current,
+        );
+        setChatMessages(messages);
+      } catch (error) {
+        if (active) {
+          console.error("Nao foi possivel carregar o chat do pedido:", error);
+        }
+      } finally {
+        if (active) {
+          timeoutId = window.setTimeout(loadChat, CHAT_POLLING_INTERVAL_MS);
+        }
+      }
+    }
+
+    void loadChat();
+
+    return () => {
+      active = false;
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [id]);
+
+  useEffect(() => {
+    chatMessagesRef.current?.scrollTo({
+      top: chatMessagesRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [chatMessages]);
+
   const total = useMemo(() => Number(order?.total ?? 0), [order?.total]);
   const history = useMemo(() => {
     if (!order?.history?.length) return [];
@@ -182,6 +269,48 @@ export default function OrderDetails() {
     "--textSecondary": Colors.Texts.secondary,
     "--highlight": Colors.Highlight.primary,
   } as OrderDetailsCssVars;
+
+  async function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const text = chatDraft.trim();
+    if (!text || !order || isSendingChatMessage) return;
+
+    setIsSendingChatMessage(true);
+
+    try {
+      const chat = order.chat?.id
+        ? order.chat
+        : await ChatService.create({ orderId: order.id });
+      const createdMessage = await ChatService.createMessage({
+        chatId: chat.id,
+        text,
+      });
+      const nextMessages = sortChatMessages([
+        ...(chat.messages || []),
+        createdMessage,
+      ]);
+
+      setOrder((current) =>
+        current
+          ? {
+              ...current,
+              chatId: chat.id,
+              chat: {
+                ...chat,
+                messages: nextMessages,
+              },
+            }
+          : current,
+      );
+      setChatMessages(nextMessages);
+      setChatDraft("");
+    } catch {
+      alert("Nao foi possivel enviar a mensagem.");
+    } finally {
+      setIsSendingChatMessage(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -402,6 +531,79 @@ export default function OrderDetails() {
                 </div>
               </div>
             </div>
+          </div>
+
+          <div className={styles.card}>
+            <div className={styles.cardHeader}>
+              <div className={styles.cardHeaderLeft}>
+                <span className={styles.headerDot}>#</span>
+                <span className={styles.cardTitleMuted}>CHAT DO PEDIDO</span>
+              </div>
+              <span className={styles.cardMeta}>
+                {chatMessages.length} mensagens
+              </span>
+            </div>
+
+            <div
+              ref={chatMessagesRef}
+              className={styles.chatMessages}
+              aria-label="Mensagens do pedido"
+            >
+              {chatMessages.length ? (
+                chatMessages.map((message) => {
+                  const isAdmin =
+                    message.senderType === ChatMessageSenderType.ADMIN;
+
+                  return (
+                    <article
+                      key={message.id}
+                      className={`${styles.chatBubble} ${
+                        isAdmin
+                          ? styles.chatBubbleAdmin
+                          : styles.chatBubbleCustomer
+                      }`}
+                    >
+                      <div className={styles.chatAuthor}>
+                        {message.senderType === ChatMessageSenderType.SYSTEM
+                          ? "Loja"
+                          : isAdmin
+                            ? "Atendimento"
+                            : message.sender?.name || order.customerName}
+                      </div>
+                      <div className={styles.chatText}>{message.text}</div>
+                      <span className={styles.chatTime}>
+                        {formatChatTime(message.createdAt)}
+                      </span>
+                    </article>
+                  );
+                })
+              ) : (
+                <div className={styles.chatEmpty}>
+                  Nenhuma mensagem encontrada.
+                </div>
+              )}
+            </div>
+
+            <form className={styles.chatForm} onSubmit={handleChatSubmit}>
+              <input
+                className={styles.chatInput}
+                value={chatDraft}
+                onChange={(event) => setChatDraft(event.target.value)}
+                disabled={isSendingChatMessage}
+                placeholder={
+                  isSendingChatMessage
+                    ? "Enviando mensagem..."
+                    : "Responder ao cliente"
+                }
+              />
+              <button
+                type="submit"
+                className={styles.chatSendButton}
+                disabled={isSendingChatMessage || !chatDraft.trim()}
+              >
+                Enviar
+              </button>
+            </form>
           </div>
 
           <div className={styles.card}>

@@ -55,6 +55,7 @@ export default function Login({
       if (data.role === UserRole.ADMIN) {
         // Salva token no storage
         localStorage.setItem("token", data.token);
+        localStorage.setItem("userId", data.user.id);
 
         // Atualiza estado global
         contextLogin(data.token);
