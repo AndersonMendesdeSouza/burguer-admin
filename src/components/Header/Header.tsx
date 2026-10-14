@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import styles from "./Header.module.css";
-import { FiSearch, FiBell } from "react-icons/fi";
+import { FiBell } from "react-icons/fi";
 import { SystemSettingsService } from "../../service/system-settings.service";
 import type { SystemSettingsResponse } from "../../dtos/response/system-settings-response.dto";
 
