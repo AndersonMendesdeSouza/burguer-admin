@@ -1,20 +1,26 @@
 import styles from "./Product.module.css";
-import { useEffect, useMemo, useState } from "react";
-import { FiChevronLeft, FiChevronRight, FiPlus } from "react-icons/fi";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ProductCard from "../../components/ProductCard";
+import ConfirmModal from "../../components/ConfirmModal/ConfirmModal";
 import { CgFileAdd } from "react-icons/cg";
 import type { CategoryKey } from "../../types/Product-type";
 import { ProductService } from "../../service/product.service";
 import type { ProductResponse } from "../../dtos/response/product-response.dto";
 import { ProductCategoryEnum } from "../../dtos/enums/product-category.enum";
 import { useNavigate } from "react-router-dom";
+import { toast } from "react-toastify";
 
 export function Products() {
   const [activeCat, setActiveCat] = useState<CategoryKey>("all");
-  const [page, setPage] = useState(1);
   const [products, setProducts] = useState<ProductResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [productToDelete, setProductToDelete] = useState<ProductResponse | null>(
+    null,
+  );
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteInProgress = useRef(false);
   const navigate = useNavigate();
   const categoryFromKey = (key: CategoryKey) => {
     switch (key) {
@@ -38,15 +44,7 @@ export function Products() {
     return products.filter((p) => p.category === category);
   }, [activeCat, products]);
 
-  const pageSize = 4;
   const total = filtered.length;
-  const maxPage = Math.max(1, Math.ceil(total / pageSize));
-  const currentPage = Math.min(page, maxPage);
-
-  const paginated = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, currentPage]);
 
   const counts = useMemo(() => {
     const countBy = (category: ProductCategoryEnum) =>
@@ -95,6 +93,38 @@ export function Products() {
     fetchProducts();
   }, []);
 
+  function handleDelete(id: string): void {
+    if (deleteInProgress.current) return;
+    const product = products.find((product) => product.id === id);
+    if (!product) return;
+    setDeleteError(null);
+    setProductToDelete(product);
+  }
+
+  async function confirmDelete(): Promise<void> {
+    if (!productToDelete || deleteInProgress.current) return;
+
+    deleteInProgress.current = true;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await ProductService.remove(productToDelete.id);
+      setProducts((currentProducts) =>
+        currentProducts.filter((product) => product.id !== productToDelete.id),
+      );
+      setProductToDelete(null);
+      toast.success("Produto excluído do cardápio");
+    } catch (error: unknown) {
+      console.error(error);
+      const message = "Erro ao excluir produto. Tente novamente.";
+      setDeleteError(message);
+      toast.error(message);
+    } finally {
+      deleteInProgress.current = false;
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className={styles.page}>
       <div
@@ -109,10 +139,7 @@ export function Products() {
             <button
               key={c.key}
               type="button"
-              onClick={() => {
-                setActiveCat(c.key);
-                setPage(1);
-              }}
+              onClick={() => setActiveCat(c.key)}
               className={`${styles.tab} ${activeCat === c.key ? styles.tabActive : ""}`}
             >
               {c.label}
@@ -147,7 +174,7 @@ export function Products() {
         <div style={{ padding: 12 }}>{error}</div>
       ) : (
         <div className={styles.grid}>
-          {paginated.map((p) => (
+          {filtered.map((p) => (
             <ProductCard
               key={p.id}
               id={p.id}
@@ -161,7 +188,7 @@ export function Products() {
               stock={p.stock}
               available
               onEdit={() => {}}
-              onDelete={() => {}}
+              onDelete={handleDelete}
               onToggleAvailable={() => {}}
               navigateTo="/product-details"
             />
@@ -171,39 +198,22 @@ export function Products() {
 
       <div className={styles.bottom}>
         <div className={styles.counter}>
-          Exibindo {paginated.length} de {total} produtos cadastrados
-        </div>
-
-        <div className={styles.pager}>
-          <button
-            type="button"
-            className={styles.pagerBtn}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            aria-label="Anterior"
-            disabled={currentPage <= 1}
-          >
-            <FiChevronLeft />
-          </button>
-          <button
-            type="button"
-            className={styles.pagerBtn}
-            onClick={() => setPage((p) => Math.min(maxPage, p + 1))}
-            aria-label="Próximo"
-            disabled={currentPage >= maxPage}
-          >
-            <FiChevronRight />
-          </button>
+          Exibindo {total} produtos cadastrados
         </div>
       </div>
 
-      <button
-        className={styles.fab}
-        type="button"
-        aria-label="Adicionar produto"
-        onClick={() => navigate("/product-details")}
-      >
-        <FiPlus />
-      </button>
+      {productToDelete && (
+        <ConfirmModal
+          title="Excluir produto"
+          description={`Excluir "${productToDelete.name}" do cardápio? Esta ação não pode ser desfeita.`}
+          loading={deleting}
+          error={deleteError}
+          onConfirm={confirmDelete}
+          onCancel={() => {
+            if (!deleteInProgress.current) setProductToDelete(null);
+          }}
+        />
+      )}
     </div>
   );
 }

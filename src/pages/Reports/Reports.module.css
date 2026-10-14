@@ -21,6 +21,10 @@
   margin-bottom: 16px;
 }
 
+.top > div {
+  min-width: 0;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: #ffd400;
@@ -78,6 +82,12 @@
   color: #111;
 }
 
+.periodButton:focus-visible,
+.exportButton:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
 .exportButton {
   height: 40px;
   padding: 0 14px;
@@ -111,7 +121,7 @@
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(6, minmax(145px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -119,8 +129,9 @@
 .metricCard,
 .chartPanel,
 .sidePanel,
-.panel,
+.paymentPanel,
 .tablePanel {
+  min-width: 0;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   background: rgba(255, 255, 255, 0.04);
@@ -196,7 +207,7 @@
 
 .chartPanel,
 .sidePanel,
-.panel,
+.paymentPanel,
 .tablePanel {
   padding: 14px;
 }
@@ -238,7 +249,16 @@
 }
 
 .barChart {
-  height: 238px;
+  min-width: 440px;
+  height: 280px;
+}
+
+.paymentPanel {
+  margin-bottom: 14px;
+}
+
+.paymentChart {
+  overflow-x: auto;
 }
 
 .state {
@@ -279,75 +299,9 @@
   font-style: normal;
 }
 
-.detailGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 14px;
-}
-
-.rankingList {
-  display: grid;
-  gap: 8px;
-}
-
-.rankingItem {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  min-height: 54px;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.rank {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 212, 0, 0.12);
-  color: #ffd400;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.rankingItem strong,
-.rankingItem span {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rankingItem strong {
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.rankingItem span {
-  margin-top: 3px;
-  color: rgba(255, 255, 255, 0.46);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.rankingItem em {
-  color: rgba(255, 255, 255, 0.86);
-  font-style: normal;
-  font-size: 12px;
-  font-weight: 900;
-}
-
 .table {
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: auto;
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -357,12 +311,18 @@
   gap: 12px;
   align-items: center;
   min-height: 52px;
+  min-width: 804px;
   padding: 10px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(0, 0, 0, 0.16);
   color: rgba(255, 255, 255, 0.68);
   font-size: 12px;
   font-weight: 700;
+}
+
+.tableRow > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .tableRow:last-child {
@@ -400,11 +360,10 @@
 
 @media (max-width: 1280px) {
   .metrics {
-    grid-template-columns: repeat(3, minmax(160px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .mainGrid,
-  .detailGrid {
+  .mainGrid {
     grid-template-columns: 1fr;
   }
 }
@@ -429,11 +388,4 @@
     grid-template-columns: 1fr;
   }
 
-  .table {
-    overflow-x: auto;
-  }
-
-  .tableRow {
-    min-width: 760px;
-  }
 }

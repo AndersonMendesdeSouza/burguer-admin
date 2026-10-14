@@ -34,6 +34,15 @@ export function OrderCard({
     currency: "BRL",
   });
 
+  let timeLabel = `${minutesAgo} min`;
+  if (minutesAgo >= 24 * 60) {
+    const days = Math.floor(minutesAgo / (24 * 60));
+    timeLabel = `${days} ${days === 1 ? "dia" : "dias"}`;
+  } else if (minutesAgo >= 60) {
+    const hours = Math.floor(minutesAgo / 60);
+    timeLabel = `${hours} h`;
+  }
+
   const statusClassByStatus: Partial<Record<OrderStatusEnum, string>> = {
     [OrderStatusEnum.RECEIVED]: "btnNew",
     [OrderStatusEnum.ON_ROUTE]: "btnOnRoute",
@@ -58,7 +67,7 @@ export function OrderCard({
           <div className={styles.customerName}>{customerName}</div>
         </div>
 
-        <div className={styles.timePill}>{minutesAgo} min</div>
+        <div className={styles.timePill}>{timeLabel}</div>
       </div>
 
       <ul className={styles.items}>

@@ -1,11 +1,12 @@
 import { OrderStatusEnum } from "../../dtos/enums/orders-status.enum";
 import type { OrderResponseDto } from "../../dtos/response/orders-response.dto";
 import styles from "./Orders.module.css";
-import { FiMoreHorizontal } from "react-icons/fi";
+import { FiChevronLeft, FiChevronRight, FiMoreHorizontal } from "react-icons/fi";
 import { OrderCard } from "../../components/OrderCard";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { OrderService } from "../../service/order.service";
 import { formatOrderCode } from "../../utils/formatOrderCode";
+import { useOrderCount } from "../../contexts/OrderCountContext";
 
 type BoardOrder = {
   id: string;
@@ -17,7 +18,7 @@ type BoardOrder = {
   items: { name: string; quantity: number }[];
 };
 
-type ColumnTone = "yellow" | "blue" | "orange" | "green";
+type ColumnTone = "yellow" | "blue" | "orange" | "green" | "red";
 
 const ORDER_COLUMNS: {
   title: string;
@@ -43,6 +44,11 @@ const ORDER_COLUMNS: {
     title: "ENTREGUES",
     status: OrderStatusEnum.DELIVERED,
     tone: "green",
+  },
+  {
+    title: "CANCELADOS",
+    status: OrderStatusEnum.CANCELED,
+    tone: "red",
   },
 ];
 
@@ -112,6 +118,43 @@ function ColumnHeader({
 
 export function Orders() {
   const [orders, setOrders] = useState<BoardOrder[]>([]);
+  const [canScrollPrevious, setCanScrollPrevious] = useState(false);
+  const [canScrollNext, setCanScrollNext] = useState(false);
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const { refreshOrderCount } = useOrderCount();
+
+  useEffect(() => {
+    const board = boardRef.current;
+    if (!board) return;
+
+    function updateScrollState() {
+      if (!board) return;
+      setCanScrollPrevious(board.scrollLeft > 1);
+      setCanScrollNext(board.scrollLeft + board.clientWidth < board.scrollWidth - 1);
+    }
+
+    const frameId = window.requestAnimationFrame(updateScrollState);
+    const resizeObserver = new ResizeObserver(updateScrollState);
+    resizeObserver.observe(board);
+    board.addEventListener("scroll", updateScrollState);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      board.removeEventListener("scroll", updateScrollState);
+    };
+  }, []);
+
+  function scrollColumns(direction: number) {
+    const board = boardRef.current;
+    if (!board) return;
+
+    const columnWidth = board.firstElementChild?.getBoundingClientRect().width;
+    if (!columnWidth) return;
+
+    const gap = Number.parseFloat(window.getComputedStyle(board).columnGap) || 0;
+    board.scrollBy({ left: direction * (columnWidth + gap) });
+  }
 
   useEffect(() => {
     let active = true;
@@ -146,11 +189,12 @@ export function Orders() {
     setOrders((currentOrders) =>
       currentOrders.map((order) => (order.id === id ? boardOrder : order)),
     );
+    void refreshOrderCount();
   }
 
   return (
     <div className={styles.page}>
-      <div className={styles.board}>
+      <div ref={boardRef} id="orders-board" className={styles.board}>
         {ORDER_COLUMNS.map((column) => {
           const columnOrders = orders.filter((o) => o.status === column.status);
 
@@ -178,7 +222,8 @@ export function Orders() {
                       items={o.items}
                       total={o.total}
                       onAccept={
-                        o.status === OrderStatusEnum.DELIVERED
+                        o.status === OrderStatusEnum.DELIVERED ||
+                        o.status === OrderStatusEnum.CANCELED
                           ? undefined
                           : () => alterStatus(o.id, o.status)
                       }
@@ -189,6 +234,30 @@ export function Orders() {
             </section>
           );
         })}
+      </div>
+      <div className={styles.carouselControls}>
+        <button
+          className={styles.carouselButton}
+          type="button"
+          aria-label="Colunas anteriores"
+          title="Colunas anteriores"
+          aria-controls="orders-board"
+          disabled={!canScrollPrevious}
+          onClick={() => scrollColumns(-1)}
+        >
+          <FiChevronLeft />
+        </button>
+        <button
+          className={styles.carouselButton}
+          type="button"
+          aria-label="Próximas colunas"
+          title="Próximas colunas"
+          aria-controls="orders-board"
+          disabled={!canScrollNext}
+          onClick={() => scrollColumns(1)}
+        >
+          <FiChevronRight />
+        </button>
       </div>
     </div>
   );

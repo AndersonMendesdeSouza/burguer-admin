@@ -29,7 +29,7 @@ function getInitials(name: string) {
 
 export function Sidebar() {
   const { logout } = useAuth();
-  const { totalOrders } = useOrderCount();
+  const { newOrders } = useOrderCount();
   const [adminUser, setAdminUser] = useState<UserResponseDto | null>(null);
   const navigate = useNavigate();
 
@@ -106,7 +106,7 @@ export function Sidebar() {
           >
             <FiShoppingCart className={styles.icon} />
             <span>Pedidos</span>
-            <span className={styles.badge}>{totalOrders}</span>
+            <span className={styles.badge}>{newOrders}</span>
           </NavLink>
 
           <NavLink

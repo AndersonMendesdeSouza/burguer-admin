@@ -6,6 +6,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -15,7 +16,6 @@ import {
 } from "recharts";
 import {
   FiAlertCircle,
-  FiBarChart2,
   FiCalendar,
   FiDownload,
   FiPackage,
@@ -24,7 +24,7 @@ import {
   FiUsers,
 } from "react-icons/fi";
 import { OrderStatusEnum } from "../../dtos/enums/orders-status.enum";
-import type { PaymentMethodEnum } from "../../dtos/enums/payment-method.enum";
+import { PaymentMethodEnum } from "../../dtos/enums/payment-method.enum";
 import { ProductStatusEnum } from "../../dtos/enums/product-status.enum";
 import type { OrderResponseDto } from "../../dtos/response/orders-response.dto";
 import type { ProductResponse } from "../../dtos/response/product-response.dto";
@@ -44,12 +44,6 @@ type RevenuePoint = {
   sortDate: string;
 };
 
-type ProductRanking = {
-  name: string;
-  quantity: number;
-  revenue: number;
-};
-
 type StatusPoint = {
   name: string;
   value: number;
@@ -57,9 +51,11 @@ type StatusPoint = {
 };
 
 type PaymentPoint = {
+  method: PaymentMethodEnum;
   label: string;
   value: number;
   revenue: number;
+  color: string;
 };
 
 const PERIODS: { key: PeriodKey; label: string }[] = [
@@ -96,6 +92,13 @@ const PAYMENT_LABELS: Record<PaymentMethodEnum, string> = {
   CASH: "Dinheiro",
 };
 
+const PAYMENT_COLORS: Record<PaymentMethodEnum, string> = {
+  CREDIT_CARD: "#60a5fa",
+  DEBIT_CARD: "#4ade80",
+  PIX: "#ffd400",
+  CASH: "#fb923c",
+};
+
 function formatCurrency(value: number): string {
   return value.toLocaleString("pt-BR", {
     style: "currency",
@@ -107,24 +110,36 @@ function formatPercent(value: number): string {
   return `${value.toFixed(1).replace(".", ",")}%`;
 }
 
-function parseMoney(value: number | string | undefined): number {
-  if (typeof value === "number") return value;
-  if (!value) return 0;
+function formatChartCurrency(value: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
 
-  const normalized = String(value).replace(/\./g, "").replace(",", ".");
-  const parsed = Number(normalized);
+function parseMoneyInCents(value: number | string | undefined): number {
+  let normalized = value;
+  if (typeof value === "string" && value.includes(",")) {
+    normalized = value.replace(/\./g, "").replace(",", ".");
+  }
 
-  return Number.isFinite(parsed) ? parsed : 0;
+  const parsed = Number(normalized ?? 0);
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
 }
 
 function getDateKey(value: Date | string): string {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "Sem data";
+    return "";
   }
 
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatShortDate(value: Date | string): string {
@@ -163,44 +178,22 @@ function getPeriodStart(period: PeriodKey): Date | null {
 
 function isInsidePeriod(order: OrderResponseDto, period: PeriodKey): boolean {
   const start = getPeriodStart(period);
-
-  if (!start) return true;
-
   const createdAt = new Date(order.createdAt).getTime();
-  return !Number.isNaN(createdAt) && createdAt >= start.getTime();
+  if (Number.isNaN(createdAt) || createdAt > Date.now()) return false;
+  return !start || createdAt >= start.getTime();
 }
 
-function getTopProducts(orders: OrderResponseDto[]): ProductRanking[] {
-  const map = new Map<string, ProductRanking>();
-
-  orders.forEach((order) => {
-    if (isCanceled(order)) return;
-
-    order.items?.forEach((item) => {
-      const current = map.get(item.name) ?? {
-        name: item.name,
-        quantity: 0,
-        revenue: 0,
-      };
-
-      current.quantity += Number(item.quantity || 0);
-      current.revenue += parseMoney(item.totalPrice);
-      map.set(item.name, current);
-    });
-  });
-
-  return [...map.values()]
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 5);
-}
-
-function getRevenueByDay(orders: OrderResponseDto[]): RevenuePoint[] {
+function getRevenueByDay(
+  orders: OrderResponseDto[],
+  period: PeriodKey,
+): RevenuePoint[] {
   const map = new Map<string, RevenuePoint>();
 
   orders.forEach((order) => {
     if (isCanceled(order)) return;
 
     const sortDate = getDateKey(order.createdAt);
+    if (!sortDate) return;
     const current = map.get(sortDate) ?? {
       sortDate,
       label: formatShortDate(order.createdAt),
@@ -208,14 +201,34 @@ function getRevenueByDay(orders: OrderResponseDto[]): RevenuePoint[] {
       orders: 0,
     };
 
-    current.revenue += parseMoney(order.total);
+    current.revenue += parseMoneyInCents(order.total);
     current.orders += 1;
     map.set(sortDate, current);
   });
 
-  return [...map.values()]
-    .sort((a, b) => a.sortDate.localeCompare(b.sortDate))
-    .slice(-14);
+  let start = getPeriodStart(period);
+  if (!start) {
+    const firstDate = [...map.keys()].sort()[0];
+    if (!firstDate) return [];
+    start = new Date(`${firstDate}T00:00:00`);
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const points: RevenuePoint[] = [];
+
+  for (const day = new Date(start); day <= today; day.setDate(day.getDate() + 1)) {
+    const sortDate = getDateKey(day);
+    const point = map.get(sortDate);
+    points.push({
+      sortDate,
+      label: formatShortDate(day),
+      revenue: (point?.revenue ?? 0) / 100,
+      orders: point?.orders ?? 0,
+    });
+  }
+
+  return points;
 }
 
 function getStatusData(orders: OrderResponseDto[]): StatusPoint[] {
@@ -230,22 +243,30 @@ function getStatusData(orders: OrderResponseDto[]): StatusPoint[] {
 
 function getPaymentData(orders: OrderResponseDto[]): PaymentPoint[] {
   const map = new Map<PaymentMethodEnum, PaymentPoint>();
+  for (const method of Object.values(PaymentMethodEnum)) {
+    map.set(method, {
+      method,
+      label: PAYMENT_LABELS[method],
+      value: 0,
+      revenue: 0,
+      color: PAYMENT_COLORS[method],
+    });
+  }
 
   orders.forEach((order) => {
     if (isCanceled(order)) return;
 
-    const current = map.get(order.paymentMethod) ?? {
-      label: PAYMENT_LABELS[order.paymentMethod],
-      value: 0,
-      revenue: 0,
-    };
+    const current = map.get(order.paymentMethod);
+    if (!current) return;
 
     current.value += 1;
-    current.revenue += parseMoney(order.total);
-    map.set(order.paymentMethod, current);
+    current.revenue += parseMoneyInCents(order.total);
   });
 
-  return [...map.values()].sort((a, b) => b.revenue - a.revenue);
+  return [...map.values()].map((point) => ({
+    ...point,
+    revenue: point.revenue / 100,
+  }));
 }
 
 function exportOrdersCsv(orders: OrderResponseDto[]) {
@@ -262,22 +283,28 @@ function exportOrdersCsv(orders: OrderResponseDto[]) {
     order.customerName,
     STATUS_LABELS[order.status],
     PAYMENT_LABELS[order.paymentMethod],
-    parseMoney(order.total).toFixed(2),
+    (parseMoneyInCents(order.total) / 100).toFixed(2).replace(".", ","),
     new Date(order.createdAt).toLocaleString("pt-BR"),
   ]);
   const csv = [headers, ...rows]
     .map((row) =>
-      row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","),
+      row.map((cell) => {
+        let text = String(cell);
+        if (/^[=+\-@\t\r\n]/.test(text)) text = `'${text}`;
+        return `"${text.replace(/"/g, '""')}"`;
+      }).join(";"),
     )
-    .join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    .join("\r\n");
+  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
 
   link.href = url;
   link.download = "relatorio-pedidos.csv";
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function MetricCard({
@@ -334,7 +361,7 @@ export function Reports() {
         setCustomers(customersData);
       } catch (err) {
         console.error("Erro ao carregar relatórios:", err);
-        setError("Não foi possível carregar os relatórios.");
+        if (active) setError("Não foi possível carregar os relatórios.");
       } finally {
         if (active) {
           setLoading(false);
@@ -359,13 +386,13 @@ export function Reports() {
     [filteredOrders],
   );
 
-  const revenue = validOrders.reduce(
-    (total, order) => total + parseMoney(order.total),
+  const revenueInCents = validOrders.reduce(
+    (total, order) => total + parseMoneyInCents(order.total),
     0,
   );
+  const revenue = revenueInCents / 100;
   const deliveredOrders = filteredOrders.filter(isDelivered).length;
   const canceledOrders = filteredOrders.filter(isCanceled).length;
-  const averageTicket = validOrders.length ? revenue / validOrders.length : 0;
   const completionRate = filteredOrders.length
     ? (deliveredOrders / filteredOrders.length) * 100
     : 0;
@@ -378,8 +405,7 @@ export function Reports() {
   const lowStockProducts = products.filter(
     (product) => product.stockEnabled && Number(product.stock ?? 0) <= 5,
   ).length;
-  const revenueByDay = getRevenueByDay(filteredOrders);
-  const topProducts = getTopProducts(filteredOrders);
+  const revenueByDay = getRevenueByDay(filteredOrders, period);
   const statusData = getStatusData(filteredOrders);
   const paymentData = getPaymentData(filteredOrders);
   const recentOrders = [...filteredOrders]
@@ -406,10 +432,10 @@ export function Reports() {
               <button
                 key={item.key}
                 type="button"
-                className={`${styles.periodButton} ${
-                  period === item.key ? styles.periodButtonActive : ""
-                }`}
+                className={`${styles.periodButton} ${period === item.key ? styles.periodButtonActive : ""
+                  }`}
                 onClick={() => setPeriod(item.key)}
+                aria-pressed={period === item.key}
               >
                 {item.label}
               </button>
@@ -420,7 +446,7 @@ export function Reports() {
             type="button"
             className={styles.exportButton}
             onClick={() => exportOrdersCsv(filteredOrders)}
-            disabled={!filteredOrders.length}
+            disabled={loading || !!error || !filteredOrders.length}
           >
             <FiDownload />
             Exportar CSV
@@ -428,273 +454,268 @@ export function Reports() {
         </div>
       </div>
 
-      {error ? <div className={styles.alert}>{error}</div> : null}
+      {loading ? (
+        <div className={styles.state} role="status">Carregando relatórios...</div>
+      ) : error ? (
+        <div className={styles.alert} role="alert">{error}</div>
+      ) : (
+        <>
 
-      <div className={styles.metrics}>
-        <MetricCard
-          icon={FiTrendingUp}
-          label="Faturamento"
-          value={formatCurrency(revenue)}
-          detail={`${validOrders.length} pedidos válidos`}
-          tone="success"
-        />
-        <MetricCard
-          icon={FiShoppingBag}
-          label="Pedidos"
-          value={String(filteredOrders.length)}
-          detail={`${formatPercent(completionRate)} concluídos`}
-        />
-        <MetricCard
-          icon={FiBarChart2}
-          label="Ticket médio"
-          value={formatCurrency(averageTicket)}
-          detail="Média dos pedidos não cancelados"
-          tone="warning"
-        />
-        <MetricCard
-          icon={FiUsers}
-          label="Clientes"
-          value={String(customers.length)}
-          detail="Usuários com perfil cliente"
-        />
-        <MetricCard
-          icon={FiPackage}
-          label="Produtos ativos"
-          value={`${activeProducts}/${products.length}`}
-          detail={`${lowStockProducts} itens com estoque baixo`}
-          tone={lowStockProducts ? "danger" : "success"}
-        />
-        <MetricCard
-          icon={FiAlertCircle}
-          label="Cancelamentos"
-          value={formatPercent(cancellationRate)}
-          detail={`${canceledOrders} pedidos cancelados`}
-          tone={canceledOrders ? "danger" : "success"}
-        />
-      </div>
-
-      <div className={styles.mainGrid}>
-        <section className={styles.chartPanel}>
-          <div className={styles.panelHeader}>
-            <div>
-              <h2 className={styles.panelTitle}>Faturamento por dia</h2>
-              <span className={styles.panelSubtitle}>
-                Últimos pontos do período selecionado
-              </span>
-            </div>
-            <FiCalendar className={styles.panelIcon} />
+          <div className={styles.metrics}>
+            <MetricCard
+              icon={FiTrendingUp}
+              label="Faturamento"
+              value={formatCurrency(revenue)}
+              detail={`${validOrders.length} pedidos não cancelados`}
+              tone="success"
+            />
+            <MetricCard
+              icon={FiShoppingBag}
+              label="Pedidos"
+              value={String(filteredOrders.length)}
+              detail={`${formatPercent(completionRate)} concluídos`}
+            />
+            <MetricCard
+              icon={FiUsers}
+              label="Clientes"
+              value={String(customers.length)}
+              detail="Total de clientes cadastrados"
+            />
+            <MetricCard
+              icon={FiPackage}
+              label="Produtos ativos"
+              value={`${activeProducts}/${products.length}`}
+              detail={`${lowStockProducts} itens com estoque baixo`}
+              tone={"success"}
+            />
+            <MetricCard
+              icon={FiAlertCircle}
+              label="Cancelamentos"
+              value={formatPercent(cancellationRate)}
+              detail={`${canceledOrders} pedidos cancelados`}
+              tone={canceledOrders ? "danger" : "success"}
+            />
           </div>
 
-          <div className={styles.chart}>
-            {loading ? (
-              <div className={styles.state}>Carregando gráfico...</div>
-            ) : revenueByDay.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={revenueByDay}>
-                  <defs>
-                    <linearGradient id="revenueGradient" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="5%" stopColor="#ffd400" stopOpacity={0.36} />
-                      <stop offset="95%" stopColor="#ffd400" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                  <XAxis dataKey="label" stroke="rgba(255,255,255,0.45)" />
-                  <YAxis
-                    stroke="rgba(255,255,255,0.45)"
-                    tickFormatter={(value) => `R$ ${Number(value)}`}
-                    width={72}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#141414",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 8,
-                      color: "#fff",
-                    }}
-                    formatter={(value) => formatCurrency(Number(value))}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="revenue"
-                    name="Faturamento"
-                    stroke="#ffd400"
-                    strokeWidth={3}
-                    fill="url(#revenueGradient)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className={styles.state}>Sem faturamento no período.</div>
-            )}
-          </div>
-        </section>
-
-        <section className={styles.sidePanel}>
-          <div className={styles.panelHeader}>
-            <div>
-              <h2 className={styles.panelTitle}>Status dos pedidos</h2>
-              <span className={styles.panelSubtitle}>Distribuição operacional</span>
-            </div>
-          </div>
-
-          <div className={styles.pieWrap}>
-            {loading ? (
-              <div className={styles.state}>Carregando status...</div>
-            ) : statusData.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={statusData}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius={48}
-                    outerRadius={78}
-                    paddingAngle={3}
-                  >
-                    {statusData.map((item) => (
-                      <Cell key={item.name} fill={item.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      background: "#141414",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 8,
-                      color: "#fff",
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className={styles.state}>Sem pedidos no período.</div>
-            )}
-          </div>
-
-          <div className={styles.legend}>
-            {statusData.map((item) => (
-              <div className={styles.legendItem} key={item.name}>
-                <span style={{ background: item.color }} />
-                <strong>{item.name}</strong>
-                <em>{item.value}</em>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <div className={styles.detailGrid}>
-        <section className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <div>
-              <h2 className={styles.panelTitle}>Produtos mais vendidos</h2>
-              <span className={styles.panelSubtitle}>Ordenado por faturamento</span>
-            </div>
-          </div>
-
-          <div className={styles.rankingList}>
-            {topProducts.length ? (
-              topProducts.map((product, index) => (
-                <div className={styles.rankingItem} key={product.name}>
-                  <span className={styles.rank}>{index + 1}</span>
-                  <div>
-                    <strong>{product.name}</strong>
-                    <span>{product.quantity} unidades vendidas</span>
-                  </div>
-                  <em>{formatCurrency(product.revenue)}</em>
+          <div className={styles.mainGrid}>
+            <section className={styles.chartPanel}>
+              <div className={styles.panelHeader}>
+                <div>
+                  <h2 className={styles.panelTitle}>Faturamento por dia</h2>
+                  <span className={styles.panelSubtitle}>
+                    Todo o período selecionado
+                  </span>
                 </div>
-              ))
-            ) : (
-              <div className={styles.state}>Sem produtos vendidos no período.</div>
-            )}
-          </div>
-        </section>
-
-        <section className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <div>
-              <h2 className={styles.panelTitle}>Formas de pagamento</h2>
-              <span className={styles.panelSubtitle}>Participação por receita</span>
-            </div>
-          </div>
-
-          <div className={styles.barChart}>
-            {paymentData.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={paymentData} layout="vertical">
-                  <CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
-                  <XAxis type="number" hide />
-                  <YAxis
-                    type="category"
-                    dataKey="label"
-                    stroke="rgba(255,255,255,0.55)"
-                    width={72}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#141414",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 8,
-                      color: "#fff",
-                    }}
-                    formatter={(value) => formatCurrency(Number(value))}
-                  />
-                  <Bar dataKey="revenue" name="Receita" fill="#ffd400" radius={6} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className={styles.state}>Sem pagamentos no período.</div>
-            )}
-          </div>
-        </section>
-      </div>
-
-      <section className={styles.tablePanel}>
-        <div className={styles.panelHeader}>
-          <div>
-            <h2 className={styles.panelTitle}>Pedidos recentes</h2>
-            <span className={styles.panelSubtitle}>
-              Últimos pedidos dentro do período
-            </span>
-          </div>
-        </div>
-
-        <div className={styles.table}>
-          <div className={`${styles.tableRow} ${styles.tableHead}`}>
-            <span>Pedido</span>
-            <span>Cliente</span>
-            <span>Status</span>
-            <span>Pagamento</span>
-            <span>Total</span>
-            <span>Data</span>
-          </div>
-
-          {recentOrders.length ? (
-            recentOrders.map((order) => (
-              <div className={styles.tableRow} key={order.id}>
-                <strong className={styles.orderCode}>
-                  {formatOrderCode(order.code)}
-                </strong>
-                <span>{order.customerName}</span>
-                <span
-                  className={styles.statusPill}
-                  style={{
-                    color: STATUS_COLORS[order.status],
-                    borderColor: `${STATUS_COLORS[order.status]}44`,
-                    background: `${STATUS_COLORS[order.status]}18`,
-                  }}
-                >
-                  {STATUS_LABELS[order.status]}
-                </span>
-                <span>{PAYMENT_LABELS[order.paymentMethod]}</span>
-                <strong>{formatCurrency(parseMoney(order.total))}</strong>
-                <span>{formatShortDate(order.createdAt)}</span>
+                <FiCalendar className={styles.panelIcon} />
               </div>
-            ))
-          ) : (
-            <div className={styles.state}>Nenhum pedido encontrado.</div>
-          )}
-        </div>
-      </section>
+
+              <div className={styles.chart}>
+                {validOrders.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={revenueByDay}>
+                      <defs>
+                        <linearGradient id="revenueGradient" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="5%" stopColor="#ffd400" stopOpacity={0.36} />
+                          <stop offset="95%" stopColor="#ffd400" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                      <XAxis
+                        dataKey="sortDate"
+                        tickFormatter={(value) => formatShortDate(`${value}T00:00:00`)}
+                        stroke="rgba(255,255,255,0.45)"
+                        minTickGap={24}
+                      />
+                      <YAxis
+                        stroke="rgba(255,255,255,0.45)"
+                        tickFormatter={(value) => formatChartCurrency(Number(value))}
+                        width={72}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: "#141414",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                          borderRadius: 8,
+                          color: "#fff",
+                        }}
+                        formatter={(value) => formatCurrency(Number(value))}
+                        labelFormatter={(value) =>
+                          new Date(`${value}T00:00:00`).toLocaleDateString("pt-BR")
+                        }
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="revenue"
+                        name="Faturamento"
+                        stroke="#ffd400"
+                        strokeWidth={3}
+                        fill="url(#revenueGradient)"
+                        dot={{ r: 3, fill: "#ffd400" }}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className={styles.state}>Sem faturamento no período.</div>
+                )}
+              </div>
+            </section>
+
+            <section className={styles.sidePanel}>
+              <div className={styles.panelHeader}>
+                <div>
+                  <h2 className={styles.panelTitle}>Status dos pedidos</h2>
+                  <span className={styles.panelSubtitle}>Distribuição operacional</span>
+                </div>
+              </div>
+
+              <div className={styles.pieWrap}>
+                {statusData.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={statusData}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={48}
+                        outerRadius={78}
+                        paddingAngle={3}
+                      >
+                        {statusData.map((item) => (
+                          <Cell key={item.name} fill={item.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          background: "#141414",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                          borderRadius: 8,
+                          color: "#fff",
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className={styles.state}>Sem pedidos no período.</div>
+                )}
+              </div>
+
+              <div className={styles.legend}>
+                {statusData.map((item) => (
+                  <div className={styles.legendItem} key={item.name}>
+                    <span style={{ background: item.color }} />
+                    <strong>{item.name}</strong>
+                    <em>{item.value}</em>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+
+          <section className={styles.paymentPanel}>
+            <div className={styles.panelHeader}>
+              <div>
+                <h2 className={styles.panelTitle}>Formas de pagamento</h2>
+                <span className={styles.panelSubtitle}>
+                  Faturamento por forma de pagamento
+                </span>
+              </div>
+            </div>
+
+            <div className={styles.paymentChart}>
+              <div className={styles.barChart}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={paymentData} margin={{ top: 28, right: 20, bottom: 8 }}>
+                    <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      stroke="rgba(255,255,255,0.55)"
+                      interval={0}
+                      tick={{ fontSize: 12 }}
+                    />
+                    <YAxis
+                      stroke="rgba(255,255,255,0.55)"
+                      tickFormatter={(value) => formatChartCurrency(Number(value))}
+                      width={80}
+                      domain={[0, (maximum: number) => maximum || 1]}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "#141414",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        borderRadius: 8,
+                        color: "#fff",
+                      }}
+                      formatter={(value) => formatCurrency(Number(value))}
+                    />
+                    <Bar dataKey="revenue" name="Faturamento" maxBarSize={64} radius={[6, 6, 0, 0]}>
+                      {paymentData.map((payment) => (
+                        <Cell key={payment.method} fill={payment.color} />
+                      ))}
+                      <LabelList
+                        dataKey="revenue"
+                        position="top"
+                        fill="#fff"
+                        fontSize={12}
+                        formatter={(value) => formatChartCurrency(Number(value))}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </section>
+
+          <section className={styles.tablePanel}>
+            <div className={styles.panelHeader}>
+              <div>
+                <h2 className={styles.panelTitle}>Pedidos recentes</h2>
+                <span className={styles.panelSubtitle}>
+                  Últimos pedidos dentro do período
+                </span>
+              </div>
+            </div>
+
+            <div className={styles.table}>
+              <div className={`${styles.tableRow} ${styles.tableHead}`}>
+                <span>Pedido</span>
+                <span>Cliente</span>
+                <span>Status</span>
+                <span>Pagamento</span>
+                <span>Total</span>
+                <span>Data</span>
+              </div>
+
+              {recentOrders.length ? (
+                recentOrders.map((order) => (
+                  <div className={styles.tableRow} key={order.id}>
+                    <strong className={styles.orderCode}>
+                      {formatOrderCode(order.code)}
+                    </strong>
+                    <span>{order.customerName}</span>
+                    <span
+                      className={styles.statusPill}
+                      style={{
+                        color: STATUS_COLORS[order.status],
+                        borderColor: `${STATUS_COLORS[order.status]}44`,
+                        background: `${STATUS_COLORS[order.status]}18`,
+                      }}
+                    >
+                      {STATUS_LABELS[order.status]}
+                    </span>
+                    <span>{PAYMENT_LABELS[order.paymentMethod]}</span>
+                    <strong>{formatCurrency(parseMoneyInCents(order.total) / 100)}</strong>
+                    <span title={new Date(order.createdAt).toLocaleString("pt-BR")}>
+                      {formatShortDate(order.createdAt)}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className={styles.state}>Nenhum pedido encontrado.</div>
+              )}
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }

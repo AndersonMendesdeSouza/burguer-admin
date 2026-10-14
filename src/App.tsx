@@ -84,11 +84,11 @@ export default function App() {
           if (orders.length > previousOrderIds.size || newOrdersCount > 0) {
             void playNotificationSound();
             showNewOrderAlert(Math.max(newOrdersCount, 1));
-            void refreshOrderCount();
           }
         }
 
         previousOrderIdsRef.current = currentOrderIds;
+        void refreshOrderCount();
       } catch (error) {
         console.error("Erro ao verificar novos pedidos:", error);
       }

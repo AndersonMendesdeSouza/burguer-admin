@@ -98,15 +98,6 @@ export function Header({ title }: HeaderProps) {
     <header className={styles.header}>
       <h1 className={styles.title}>{title}</h1>
 
-      <div className={styles.search}>
-        <FiSearch className={styles.searchIcon} />
-        <input
-          type="text"
-          placeholder="Buscar pedido ou cliente..."
-          className={styles.searchInput}
-        />
-      </div>
-
       <div className={styles.right}>
         <button className={styles.notification}>
           <FiBell />

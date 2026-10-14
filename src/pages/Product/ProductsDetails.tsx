@@ -19,6 +19,7 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import Colors from "../../themes/Colors";
+import ConfirmModal from "../../components/ConfirmModal/ConfirmModal";
 import { ProductService } from "../../service/product.service";
 import type { ProductResponse } from "../../dtos/response/product-response.dto";
 import type { ImageResponse } from "../../dtos/response/image-response.dto";
@@ -125,6 +126,7 @@ export function ProductsDetails() {
   const { id } = useParams<{ id?: string }>();
   const isEdit = !!id;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const deleteInProgress = useRef(false);
 
   const [media, setMedia] = useState<Media[]>([]);
   const [addons, setAddons] = useState<Addon[]>([]);
@@ -151,6 +153,8 @@ export function ProductsDetails() {
   const [loadingProduct, setLoadingProduct] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitted, setSubmitted] = useState(false);
@@ -491,22 +495,25 @@ export function ProductsDetails() {
   }
 
   async function deleteProduct(): Promise<void> {
-    if (!product?.id || deleting) return;
-    const confirmed = window.confirm(
-      `Excluir "${product.name}" do cardápio? Esta ação não pode ser desfeita.`,
-    );
-    if (!confirmed) return;
+    if (!product?.id || !showDeleteModal || saving || deleteInProgress.current) {
+      return;
+    }
 
+    deleteInProgress.current = true;
     try {
       setDeleting(true);
+      setDeleteError(null);
       await ProductService.remove(product.id);
+      setShowDeleteModal(false);
       toast.success("Produto excluído do cardápio");
       navigate(-1);
     } catch (error: unknown) {
       const message = getErrorMessage(error, "Erro ao excluir produto.");
+      setDeleteError(message);
       setLoadError(message);
       toast.error(message);
     } finally {
+      deleteInProgress.current = false;
       setDeleting(false);
     }
   }
@@ -1095,7 +1102,10 @@ export function ProductsDetails() {
             <button
               className={styles.deleteBtn}
               type="button"
-              onClick={deleteProduct}
+              onClick={() => {
+                setDeleteError(null);
+                setShowDeleteModal(true);
+              }}
               disabled={saving || deleting}
             >
               {deleting ? <FiLoader className={styles.spinner} /> : <FiTrash2 />}
@@ -1104,6 +1114,19 @@ export function ProductsDetails() {
           </div>
         ) : null}
       </section>
+
+      {showDeleteModal && product && (
+        <ConfirmModal
+          title="Excluir produto"
+          description={`Excluir "${product.name}" do cardápio? Esta ação não pode ser desfeita.`}
+          loading={deleting}
+          error={deleteError}
+          onConfirm={deleteProduct}
+          onCancel={() => {
+            if (!deleteInProgress.current) setShowDeleteModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }
