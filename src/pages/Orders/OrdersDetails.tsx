@@ -1,6 +1,7 @@
 import type { CSSProperties, FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { UtensilsCrossed } from "lucide-react";
 import styles from "./OrderDetails.module.css";
 import Colors from "../../themes/Colors";
 import { OrderService } from "../../service/order.service";
@@ -247,6 +248,7 @@ export default function OrderDetails() {
   }, [chatMessages]);
 
   const total = useMemo(() => Number(order?.total ?? 0), [order?.total]);
+  const tableNumber = order?.mesaId?.trim();
   const history = useMemo(() => {
     if (!order?.history?.length) return [];
 
@@ -378,6 +380,12 @@ export default function OrderDetails() {
               <span className={styles.statusPill}>
                 {statusLabel[order.status] || order.status}
               </span>
+              {tableNumber ? (
+                <span className={styles.tableBadge}>
+                  <UtensilsCrossed aria-hidden="true" />
+                  <span>Mesa <strong>{tableNumber}</strong></span>
+                </span>
+              ) : null}
             </div>
             <div className={styles.subtitle}>
               {formatReceivedAt(order.createdAt)}

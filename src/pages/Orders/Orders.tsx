@@ -10,6 +10,7 @@ import { useOrderCount } from "../../contexts/OrderCountContext";
 
 type BoardOrder = {
   id: string;
+  mesaId?: string | null;
   number: string;
   customerName: string;
   minutes: number;
@@ -78,6 +79,7 @@ function getBoardStatus(status: OrderResponseDto["status"]): OrderStatusEnum {
 function mapOrderToBoardOrder(order: OrderResponseDto): BoardOrder {
   return {
     id: order.id,
+    mesaId: order.mesaId,
     number: formatOrderCode(order.code),
     customerName: order.customerName,
     minutes: getMinutesAgo(order.createdAt),
@@ -215,6 +217,7 @@ export function Orders() {
                   >
                     <OrderCard
                       navigateTo={`/orders-details/${o.id}`}
+                      mesaId={o.mesaId}
                       status={o.status}
                       orderNumber={o.number}
                       customerName={o.customerName}

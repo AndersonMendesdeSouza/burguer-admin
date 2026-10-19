@@ -53,6 +53,32 @@
   gap: 8px;
 }
 
+.tableBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-top: 10px;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 212, 0, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 212, 0, 0.08);
+  color: #ffd400;
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.tableBadge svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.tableBadge strong {
+  font-weight: 900;
+}
+
 .item {
   display: flex;
   align-items: center;

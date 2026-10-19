@@ -41,6 +41,7 @@
 
 .titleRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
 }
@@ -60,6 +61,31 @@
   padding: 6px 10px;
   border-radius: 999px;
   letter-spacing: 0.6px;
+}
+
+.tableBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  border-radius: 999px;
+  background: rgba(255, 215, 0, 0.08);
+  color: var(--highlight);
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.tableBadge svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.tableBadge strong {
+  font-weight: 900;
 }
 
 .subtitle {

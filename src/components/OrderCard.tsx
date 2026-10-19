@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { OrderStatusEnum } from "../dtos/enums/orders-status.enum";
 import styles from "./OrderCard.module.css";
 import { FiChevronRight } from "react-icons/fi";
+import { UtensilsCrossed } from "lucide-react";
 
 type OrderItem = {
   name: string;
@@ -10,6 +11,7 @@ type OrderItem = {
 
 type Props = {
   orderNumber: string;
+  mesaId?: string | null;
   customerName: string;
   minutesAgo: number;
   items: OrderItem[];
@@ -21,6 +23,7 @@ type Props = {
 
 export function OrderCard({
   orderNumber,
+  mesaId,
   customerName,
   minutesAgo,
   items,
@@ -29,6 +32,7 @@ export function OrderCard({
   status,
   navigateTo,
 }: Props) {
+  const tableNumber = mesaId?.trim();
   const price = total.toLocaleString("pt-BR", {
     style: "currency",
     currency: "BRL",
@@ -69,6 +73,13 @@ export function OrderCard({
 
         <div className={styles.timePill}>{timeLabel}</div>
       </div>
+
+      {tableNumber ? (
+        <div className={styles.tableBadge}>
+          <UtensilsCrossed aria-hidden="true" />
+          <span>Mesa <strong>{tableNumber}</strong></span>
+        </div>
+      ) : null}
 
       <ul className={styles.items}>
         {items.slice(0, 2).map((it, idx) => (
