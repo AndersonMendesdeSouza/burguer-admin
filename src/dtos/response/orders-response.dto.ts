@@ -5,6 +5,7 @@ import type { AddressResponseDto } from "./address-response.dto";
 import type { ChatResponseDto } from "./chat-response.dto";
 
 type OrderHistory = {
+  mesaId?: string;
   status: OrderStatusEnum;
   label: string;
   time?: string;
