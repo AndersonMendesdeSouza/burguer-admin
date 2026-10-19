@@ -114,7 +114,7 @@ export default function Login({
             <span className={styles.brandMark}>
               <IoRestaurant color="#000" size={22} />
             </span>
-            <span className={styles.brandName}>MAIS BURGUER</span>
+            <span className={styles.brandName}>BURGUER ADMIN</span>
           </div>
 
           <h1 className={styles.heroTitle}>
