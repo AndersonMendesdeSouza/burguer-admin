@@ -41,6 +41,8 @@ export default function ProductCard({
 }: Props) {
   const navigate = useNavigate();
   const [status, setStatus] = useState<ProductStatusEnum>(isActive);
+  const primaryImage = imageUrl.find((image) => image.isPrimary) || imageUrl[0];
+
   function alterationStatus(): void {
     const newStatus =
       status === ProductStatusEnum.ACTIVED
@@ -65,7 +67,7 @@ export default function ProductCard({
           className={`${styles.image} ${
             status === ProductStatusEnum.DISABLED ? styles.imageDim : ""
           }`}
-          src={resolveImageUrl(imageUrl[0]?.url)}
+          src={resolveImageUrl(primaryImage?.imageUrl || primaryImage?.url)}
           alt=""
         />
 

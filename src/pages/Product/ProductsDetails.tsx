@@ -34,6 +34,7 @@ import { API_BASE_URL } from "../../service/api";
 type Media = {
   id: string;
   url: string;
+  imagePublicId?: string | null;
   isPrimary?: boolean;
   file?: File;
 };
@@ -97,8 +98,10 @@ function parseDecimal(value: string) {
 }
 
 function getImageUrl(image: ImageResponse) {
-  if (image.url?.startsWith("http")) return image.url;
-  return `${API_BASE_URL}/${String(image.url || "").replace(/^\/+/, "")}`;
+  const url = image.imageUrl || image.url;
+  if (!url) return "";
+  if (url.startsWith("http")) return url;
+  return `${API_BASE_URL}/${url.replace(/^\/+/, "")}`;
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -127,6 +130,7 @@ export function ProductsDetails() {
   const isEdit = !!id;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const deleteInProgress = useRef(false);
+  const mediaDeleteInProgress = useRef(false);
 
   const [media, setMedia] = useState<Media[]>([]);
   const [addons, setAddons] = useState<Addon[]>([]);
@@ -145,7 +149,7 @@ export function ProductsDetails() {
   const [price, setPrice] = useState("");
   const [promoPrice, setPromoPrice] = useState("");
   const [isActive, setActive] = useState<ProductStatusEnum>(
-    ProductStatusEnum.DISABLED,
+    ProductStatusEnum.ACTIVED,
   );
   const [stockEnabled, setStockEnabled] = useState(false);
   const [stock, setStock] = useState("0");
@@ -153,6 +157,7 @@ export function ProductsDetails() {
   const [loadingProduct, setLoadingProduct] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -170,7 +175,7 @@ export function ProductsDetails() {
       setCategory(ProductCategoryEnum.FOOD);
       setPrice("");
       setPromoPrice("");
-      setActive(ProductStatusEnum.DISABLED);
+      setActive(ProductStatusEnum.ACTIVED);
       setStockEnabled(false);
       setStock("0");
       setAddons([]);
@@ -202,8 +207,9 @@ export function ProductsDetails() {
         setStockEnabled(!!data.stockEnabled);
         setMedia(
           (data.images || []).map((image: ImageResponse) => ({
-            id: String(image.id ?? image.fileName ?? image.url),
+            id: String(image.id),
             url: getImageUrl(image),
+            imagePublicId: image.imagePublicId,
             isPrimary: !!image.isPrimary,
           })),
         );
@@ -285,17 +291,36 @@ export function ProductsDetails() {
     );
   };
 
-  const removeMedia = (mediaId: string) => {
-    setMedia((prev) => {
-      const removed = prev.find((item) => item.id === mediaId);
-      if (removed?.file) URL.revokeObjectURL(removed.url);
+  const removeMedia = async (mediaId: string) => {
+    if (saving || deleting || mediaDeleteInProgress.current) return;
 
-      const next = prev.filter((item) => item.id !== mediaId);
-      if (next.length && !next.some((item) => item.isPrimary)) {
-        next[0] = { ...next[0], isPrimary: true };
+    const removed = media.find((item) => item.id === mediaId);
+    if (!removed) return;
+
+    mediaDeleteInProgress.current = true;
+    setDeletingMediaId(mediaId);
+
+    try {
+      if (!removed.file && removed.imagePublicId) {
+        await ProductService.removeImg(removed.imagePublicId);
       }
-      return next;
-    });
+
+      if (removed.file) URL.revokeObjectURL(removed.url);
+
+      setMedia((prev) => {
+        const next = prev.filter((item) => item.id !== mediaId);
+        if (next.length && !next.some((item) => item.isPrimary)) {
+          next[0] = { ...next[0], isPrimary: true };
+        }
+        return next;
+      });
+    } catch (error: unknown) {
+      const message = getErrorMessage(error, "Erro ao excluir imagem.");
+      toast.error(message);
+    } finally {
+      mediaDeleteInProgress.current = false;
+      setDeletingMediaId(null);
+    }
   };
 
   const removeAddon = (addonId: string) => {
@@ -420,7 +445,7 @@ export function ProductsDetails() {
   };
 
   async function onSave(): Promise<void> {
-    if (saving || loadingProduct) return;
+    if (saving || loadingProduct || mediaDeleteInProgress.current) return;
 
     setSubmitted(true);
     setLoadError(null);
@@ -455,11 +480,11 @@ export function ProductsDetails() {
       })),
       ...(isEdit
         ? {
-            existingImageIds: media
-              .filter((item) => !item.file)
-              .map((item) => item.id),
-            primaryImageId: primaryId,
-          }
+          existingImageIds: media
+            .filter((item) => !item.file)
+            .map((item) => item.id),
+          primaryImageId: primaryId,
+        }
         : {}),
     };
 
@@ -495,7 +520,13 @@ export function ProductsDetails() {
   }
 
   async function deleteProduct(): Promise<void> {
-    if (!product?.id || !showDeleteModal || saving || deleteInProgress.current) {
+    if (
+      !product?.id ||
+      !showDeleteModal ||
+      saving ||
+      deleteInProgress.current ||
+      mediaDeleteInProgress.current
+    ) {
       return;
     }
 
@@ -621,7 +652,7 @@ export function ProductsDetails() {
           <button
             className={styles.secondaryBtn}
             type="button"
-            disabled={saving || deleting}
+            disabled={saving || deleting || deletingMediaId !== null}
             onClick={() => navigate(-1)}
           >
             Descartar
@@ -630,7 +661,7 @@ export function ProductsDetails() {
             className={styles.saveBtn}
             type="button"
             onClick={onSave}
-            disabled={saving || deleting}
+            disabled={saving || deleting || deletingMediaId !== null}
           >
             {saving ? (
               <FiLoader className={styles.spinner} />
@@ -651,24 +682,29 @@ export function ProductsDetails() {
 
       <div className={styles.heroGrid}>
         <section
-          className={`${styles.galleryPanel} ${
-            submitted && errors.media ? styles.panelError : ""
-          }`}
+          className={`${styles.galleryPanel} ${submitted && errors.media ? styles.panelError : ""
+            }`}
           data-field="media"
         >
           <div className={styles.sectionHeader}>
             <div>
               <span className={styles.sectionKicker}>Galeria</span>
               <h2 className={styles.sectionTitle}>Imagens do produto</h2>
+              <p className={styles.galleryDescription}>
+                Escolha a foto principal e mostre outros ângulos do produto.
+              </p>
             </div>
-            <button
-              className={styles.smallAction}
-              type="button"
-              onClick={onPickFilesClick}
-            >
-              <FiUploadCloud />
-              Enviar fotos
-            </button>
+            {media.length > 0 && (
+              <button
+                className={styles.smallAction}
+                type="button"
+                onClick={onPickFilesClick}
+                disabled={saving || deleting || deletingMediaId !== null}
+              >
+                <FiUploadCloud />
+                Adicionar fotos
+              </button>
+            )}
           </div>
 
           {submitted && errors.media ? (
@@ -679,44 +715,76 @@ export function ProductsDetails() {
             {media.map((item) => (
               <div
                 key={item.id}
-                className={`${styles.mediaCard} ${
-                  item.id === primaryId ? styles.mediaCardActive : ""
-                }`}
+                className={`${styles.mediaCard} ${item.id === primaryId ? styles.mediaCardActive : ""
+                  }`}
               >
                 {item.id === primaryId ? (
                   <span className={styles.primaryTag}>Principal</span>
                 ) : null}
 
-                <img src={item.url} alt="" className={styles.mediaImg} />
+                <img
+                  src={item.url}
+                  alt={item.file?.name || name || "Foto do produto"}
+                  className={styles.mediaImg}
+                />
 
                 <div className={styles.mediaActions}>
                   <button
-                    className={styles.mediaBtn}
+                    className={`${styles.mediaBtn} ${styles.primaryMediaBtn} ${
+                      item.id === primaryId ? styles.mediaBtnActive : ""
+                    }`}
                     type="button"
                     onClick={() => setPrimary(item.id)}
+                    disabled={saving || deleting || deletingMediaId !== null}
                     aria-label="Definir como principal"
+                    aria-pressed={item.id === primaryId}
+                    title="Definir como principal"
                   >
                     <FiCheck />
+                    <span>
+                      {item.id === primaryId ? "Principal" : "Definir capa"}
+                    </span>
                   </button>
                   <button
-                    className={styles.mediaBtn}
+                    className={`${styles.mediaBtn} ${styles.deleteMediaBtn}`}
                     type="button"
-                    onClick={() => removeMedia(item.id)}
+                    onClick={() => void removeMedia(item.id)}
+                    disabled={saving || deleting || deletingMediaId !== null}
                     aria-label="Excluir imagem"
+                    title="Excluir imagem"
+                    aria-busy={deletingMediaId === item.id}
                   >
-                    <FiTrash2 />
+                    {deletingMediaId === item.id ? (
+                      <FiLoader className={styles.spinner} />
+                    ) : (
+                      <FiTrash2 />
+                    )}
                   </button>
                 </div>
               </div>
             ))}
 
             <button
-              className={styles.uploadCard}
+              className={`${styles.uploadCard} ${
+                media.length === 0 ? styles.uploadCardEmpty : ""
+              }`}
               type="button"
               onClick={onPickFilesClick}
+              disabled={saving || deleting || deletingMediaId !== null}
             >
-              <FiPlus className={styles.uploadIcon} />
-              <strong>Adicionar imagem</strong>
+              {media.length === 0 ? (
+                <FiUploadCloud className={styles.uploadIcon} />
+              ) : (
+                <FiPlus className={styles.uploadIcon} />
+              )}
+              <strong>
+                {media.length === 0
+                  ? "Adicione as fotos do produto"
+                  : "Adicionar foto"}
+              </strong>
+              {media.length === 0 && (
+                <span>Clique aqui para selecionar as imagens</span>
+              )}
               <span>PNG, JPG ou WEBP</span>
             </button>
           </div>
@@ -726,11 +794,10 @@ export function ProductsDetails() {
           <div className={styles.previewHeader}>
             <span className={styles.sectionKicker}>Prévia</span>
             <span
-              className={`${styles.statusBadge} ${
-                isActive === ProductStatusEnum.ACTIVED
-                  ? styles.statusOn
-                  : styles.statusOff
-              }`}
+              className={`${styles.statusBadge} ${isActive === ProductStatusEnum.ACTIVED
+                ? styles.statusOn
+                : styles.statusOff
+                }`}
             >
               {isActive === ProductStatusEnum.ACTIVED
                 ? "Disponível"
@@ -830,11 +897,10 @@ export function ProductsDetails() {
                 <div className={styles.toggleRow}>
                   <button
                     type="button"
-                    className={`${styles.pill} ${
-                      isActive === ProductStatusEnum.ACTIVED
-                        ? styles.pillOn
-                        : styles.pillOff
-                    }`}
+                    className={`${styles.pill} ${isActive === ProductStatusEnum.ACTIVED
+                      ? styles.pillOn
+                      : styles.pillOff
+                      }`}
                     aria-pressed={isActive === ProductStatusEnum.ACTIVED}
                     onClick={toggleProductStatus}
                   >
@@ -932,9 +998,8 @@ export function ProductsDetails() {
                 <div className={styles.toggleRow}>
                   <button
                     type="button"
-                    className={`${styles.pill} ${
-                      stockEnabled ? styles.pillOn : styles.pillOff
-                    }`}
+                    className={`${styles.pill} ${stockEnabled ? styles.pillOn : styles.pillOff
+                      }`}
                     aria-pressed={stockEnabled}
                     onClick={toggleStockEnabled}
                   >
@@ -988,15 +1053,13 @@ export function ProductsDetails() {
         {showAddonForm ? (
           <div className={styles.addonForm}>
             <div
-              className={`${styles.field} ${
-                addonErrors.name ? styles.fieldInvalid : ""
-              }`}
+              className={`${styles.field} ${addonErrors.name ? styles.fieldInvalid : ""
+                }`}
             >
               <label className={styles.label}>Nome do adicional</label>
               <input
-                className={`${styles.input} ${
-                  addonErrors.name ? styles.inputError : ""
-                }`}
+                className={`${styles.input} ${addonErrors.name ? styles.inputError : ""
+                  }`}
                 value={addonName}
                 onChange={(event) => {
                   setAddonName(event.target.value);
@@ -1020,17 +1083,15 @@ export function ProductsDetails() {
             </div>
 
             <div
-              className={`${styles.field} ${
-                addonErrors.price ? styles.fieldInvalid : ""
-              }`}
+              className={`${styles.field} ${addonErrors.price ? styles.fieldInvalid : ""
+                }`}
             >
               <label className={styles.label}>Preço</label>
               <div className={styles.moneyInput}>
                 <span className={styles.moneyPrefix}>R$</span>
                 <input
-                  className={`${styles.input} ${
-                    addonErrors.price ? styles.inputError : ""
-                  }`}
+                  className={`${styles.input} ${addonErrors.price ? styles.inputError : ""
+                    }`}
                   value={addonPrice}
                   onChange={(event) => {
                     setAddonPrice(event.target.value);

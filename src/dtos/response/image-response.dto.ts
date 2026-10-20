@@ -1,6 +1,7 @@
 export interface ImageResponse {
-  id: string;
-  fileName: string;
-  url: string;
+  id: number;
+  imageUrl?: string | null;
+  imagePublicId?: string | null;
+  url?: string;
   isPrimary: boolean;
 }

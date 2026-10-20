@@ -98,4 +98,10 @@ export const ProductService = {
   remove: async (id: string): Promise<void> => {
     await api.delete(`${API_URL}/${id}`);
   },
+
+  removeImg: async (imagePublicId: string): Promise<void> => {
+    await api.delete("/cloudinary", {
+      params: { publicId: imagePublicId },
+    });
+  },
 };
