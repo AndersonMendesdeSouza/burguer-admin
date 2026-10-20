@@ -8,7 +8,16 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
-import { FiChevronLeft, FiChevronRight, FiDollarSign, FiEye, FiShoppingBag } from "react-icons/fi";
+import {
+  FiCalendar,
+  FiChevronLeft,
+  FiChevronRight,
+  FiDollarSign,
+  FiEye,
+  FiFilter,
+  FiShoppingBag,
+  FiTrendingUp,
+} from "react-icons/fi";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { OrderService } from "../../service/order.service";
@@ -277,11 +286,17 @@ export function Dashboard() {
       <div className={styles.top}>
         <div>
           <h1 className={styles.title}>Relatórios de Vendas</h1>
+          <p className={styles.subtitle}>
+            Acompanhe as vendas e os pedidos do período.
+          </p>
         </div>
 
         <div className={styles.filters}>
           <label className={styles.filterField}>
-            Início
+            <span className={styles.filterLabel}>
+              <FiCalendar aria-hidden="true" />
+              Início
+            </span>
             <input
               className={styles.filterInput}
               type="date"
@@ -293,7 +308,10 @@ export function Dashboard() {
             />
           </label>
           <label className={styles.filterField}>
-            Fim
+            <span className={styles.filterLabel}>
+              <FiCalendar aria-hidden="true" />
+              Fim
+            </span>
             <input
               className={styles.filterInput}
               type="date"
@@ -306,7 +324,10 @@ export function Dashboard() {
             />
           </label>
           <label className={styles.filterField}>
-            Status
+            <span className={styles.filterLabel}>
+              <FiFilter aria-hidden="true" />
+              Status
+            </span>
             <select
               className={styles.filterInput}
               value={statusFilter}
@@ -336,14 +357,14 @@ export function Dashboard() {
       ) : !invalidDateRange ? (
         <>
           <div className={styles.metrics}>
-            <div className={styles.metricCard}>
-              <span className={styles.metricIcon}><FiDollarSign /></span>
+            <div className={`${styles.metricCard} ${styles.revenueCard}`}>
+              <span className={styles.metricIcon}><FiDollarSign aria-hidden="true" /></span>
               <div className={styles.metricLabel}>FATURAMENTO TOTAL</div>
               <div className={styles.metricValue}>{formatMoney(revenueInCents / 100)}</div>
               <div className={styles.metricSub}>{validOrders.length} pedidos não cancelados</div>
             </div>
-            <div className={styles.metricCard}>
-              <span className={styles.metricIcon}><FiShoppingBag /></span>
+            <div className={`${styles.metricCard} ${styles.ordersCard}`}>
+              <span className={styles.metricIcon}><FiShoppingBag aria-hidden="true" /></span>
               <div className={styles.metricLabel}>NÚMERO DE PEDIDOS</div>
               <div className={styles.metricValue}>{filteredOrders.length}</div>
               <div className={styles.metricSub}>
@@ -354,14 +375,19 @@ export function Dashboard() {
 
           <div className={styles.panel}>
             <div className={styles.panelHeader}>
-              <div>
-                <div className={styles.panelTitle}>Desempenho de Vendas</div>
-                <div className={styles.panelSub}>
-                  Faturamento no período selecionado
+              <div className={styles.panelHeading}>
+                <span className={styles.panelIcon} aria-hidden="true">
+                  <FiTrendingUp />
+                </span>
+                <div>
+                  <div className={styles.panelTitle}>Desempenho de Vendas</div>
+                  <div className={styles.panelSub}>
+                    Faturamento no período selecionado
+                  </div>
                 </div>
               </div>
 
-              <div className={styles.tabs}>
+              <div className={styles.tabs} role="group" aria-label="Período de vendas">
                 {PERIODS.map((item) => (
                   <button
                     key={item.key}
