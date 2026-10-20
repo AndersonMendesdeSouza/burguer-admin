@@ -618,21 +618,23 @@ export default function OrderDetails() {
             <div className={styles.cardHeader}>
               <div className={styles.cardHeaderLeft}>
                 <span className={styles.cardTitleMuted}>
-                  ENDERECO DE ENTREGA
+                  {tableNumber ? "DESTINO DO PEDIDO" : "ENDEREÇO DE ENTREGA"}
                 </span>
               </div>
             </div>
 
             <div className={styles.addressBlock}>
               <div className={styles.addressLine1}>
-                {formatAddressLine(order)}
+                {tableNumber
+                  ? `Destinado à mesa ${tableNumber}`
+                  : formatAddressLine(order)}
               </div>
-              {formatAddressDetails(order) ? (
+              {!tableNumber && formatAddressDetails(order) ? (
                 <div className={styles.addressLine2}>
                   {formatAddressDetails(order)}
                 </div>
               ) : null}
-              {formatAddressComplement(order) ? (
+              {!tableNumber && formatAddressComplement(order) ? (
                 <div className={styles.addressLine3}>
                   {formatAddressComplement(order)}
                 </div>
