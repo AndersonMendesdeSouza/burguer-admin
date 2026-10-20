@@ -33,6 +33,7 @@ export function OrderCard({
   navigateTo,
 }: Props) {
   const tableNumber = mesaId?.trim();
+  const remainingItemsCount = items.length - 2;
   const price = total.toLocaleString("pt-BR", {
     style: "currency",
     currency: "BRL",
@@ -91,6 +92,12 @@ export function OrderCard({
           </li>
         ))}
       </ul>
+
+      {remainingItemsCount > 0 && (
+        <span className={styles.moreItems}>
+          + {remainingItemsCount} {remainingItemsCount === 1 ? "item" : "itens"}
+        </span>
+      )}
 
       <div className={styles.divider} />
 

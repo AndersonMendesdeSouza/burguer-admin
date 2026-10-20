@@ -63,7 +63,7 @@ export function Products() {
     () => [
       { key: "all", label: `Todos ${counts.all}` },
       { key: "hamburgers", label: "Comidas" },
-      { key: "sides", label: "Acompanhamentos " },
+      { key: "sides", label: "Acompanhamentos" },
       { key: "drinks", label: "Bebidas" },
       { key: "desserts", label: "Sobremesas" },
     ],
@@ -127,13 +127,7 @@ export function Products() {
 
   return (
     <div className={styles.page}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: 10,
-        }}
-      >
+      <div className={styles.toolbar}>
         <div className={styles.tabs}>
           {CATEGORIES.map((c) => (
             <button
@@ -173,26 +167,62 @@ export function Products() {
       ) : error ? (
         <div style={{ padding: 12 }}>{error}</div>
       ) : (
-        <div className={styles.grid}>
-          {filtered.map((p) => (
-            <ProductCard
-              key={p.id}
-              id={p.id}
-              name={p.name}
-              description={p.description}
-              category={p.category}
-              price={p.price}
-              imageUrl={p.images}
-              isActive={p.isActive}
-              stockEnabled={p.stockEnabled}
-              stock={p.stock}
-              available
-              onEdit={() => {}}
-              onDelete={handleDelete}
-              onToggleAvailable={() => {}}
-              navigateTo="/product-details"
-            />
-          ))}
+        <div className={styles.categories}>
+          {CATEGORIES.filter((category) => category.key !== "all").map(
+            (category) => {
+              const categoryProducts = filtered.filter(
+                (product) => product.category === categoryFromKey(category.key),
+              );
+              if (categoryProducts.length === 0) return null;
+
+              const titleId = `category-${category.key}`;
+
+              return (
+                <section
+                  key={category.key}
+                  className={styles.section}
+                  aria-labelledby={titleId}
+                >
+                  <div className={styles.sectionHeader}>
+                    <h2 id={titleId} className={styles.sectionTitle}>
+                      {category.label}
+                    </h2>
+                    <span className={styles.sectionCount}>
+                      {categoryProducts.length}{" "}
+                      {categoryProducts.length === 1 ? "produto" : "produtos"}
+                    </span>
+                  </div>
+
+                  <div
+                    className={styles.carousel}
+                    role="region"
+                    aria-labelledby={titleId}
+                    tabIndex={0}
+                  >
+                    {categoryProducts.map((p) => (
+                      <ProductCard
+                        key={p.id}
+                        id={p.id}
+                        name={p.name}
+                        description={p.description}
+                        category={p.category}
+                        price={p.price}
+                        imageUrl={p.images}
+                        isActive={p.isActive}
+                        stockEnabled={p.stockEnabled}
+                        stock={p.stock}
+                        available
+                        onEdit={() => {}}
+                        onDelete={handleDelete}
+                        onToggleAvailable={() => {}}
+                        navigateTo="/product-details"
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            },
+          )}
         </div>
       )}
 
